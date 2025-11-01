@@ -38,7 +38,7 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
   return (
     <div
       className={cn(
-        'fixed bottom-0 left-0 right-0 bg-card border-t border-border shadow-lg transition-all duration-300 z-50',
+        'fixed bottom-0 left-0 right-0 bg-card border-t border-border shadow-lg transition-all duration-300 z-[1000]',
         isExpanded ? 'h-[60vh]' : 'h-12'
       )}
     >
@@ -78,40 +78,53 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
               <TableHeader>
                 <TableRow>
                   <TableHead className="font-semibold">Census Tract</TableHead>
-                  <TableHead className="font-semibold text-right">Annual Vehicle Crashes</TableHead>
                   <TableHead className="font-semibold text-right">Car-Free Households (%)</TableHead>
-                  <TableHead className="font-semibold text-right">Vulnerable Residents (%)</TableHead>
                   <TableHead className="font-semibold text-right">Median Income ($)</TableHead>
-                  <TableHead className="font-semibold text-right">Transit Access Score</TableHead>
+                  <TableHead className="font-semibold text-right">Transit Access Score (%)</TableHead>
+                  <TableHead className="font-semibold text-right">Vulnerable Residents (%)</TableHead>
                   <TableHead className="font-semibold text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {selectedTracts.map((tract) => (
-                  <TableRow 
-                    key={tract.properties.GEOID}
-                    className="hover:bg-muted/50 cursor-pointer"
-                    onClick={() => onTractHighlight(tract.properties.GEOID)}
-                  >
-                    <TableCell className="font-medium">{tract.properties.NAME}</TableCell>
-                    <TableCell className="text-right">{tract.properties.crashes}</TableCell>
-                    <TableCell className="text-right">{tract.properties.carfree}%</TableCell>
-                    <TableCell className="text-right">{tract.properties.vulnerable}%</TableCell>
-                    <TableCell className="text-right">${tract.properties.income.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{tract.properties.transit}</TableCell>
-                    <TableCell className="text-center">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onTractRemove(tract.properties.GEOID);
-                        }}
-                        className="text-destructive hover:text-destructive/80 text-xs px-2 py-1 rounded border border-destructive/20 hover:bg-destructive/10"
-                      >
-                        Remove
-                      </button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {selectedTracts.map((tract) => {
+                  // Handle both feature format and direct data format
+                  const tractData = tract.properties || tract;
+                  const geoid = tractData.GEOID || tract.GEOID;
+                  const name = tractData.NAME || tractData.name || `Tract ${tractData.tract || ''}`;
+                  
+                  return (
+                    <TableRow 
+                      key={geoid}
+                      className="hover:bg-muted/50 cursor-pointer"
+                      onClick={() => onTractHighlight(geoid)}
+                    >
+                      <TableCell className="font-medium">{name}</TableCell>
+                      <TableCell className="text-right">
+                        {tractData.carfree !== undefined ? `${parseFloat(String(tractData.carfree)).toFixed(1)}%` : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {tractData.income ? `$${parseInt(String(tractData.income)).toLocaleString()}` : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {tractData.transit !== undefined ? `${parseFloat(String(tractData.transit)).toFixed(1)}%` : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {tractData.vulnerable !== undefined ? `${parseFloat(String(tractData.vulnerable)).toFixed(1)}%` : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onTractRemove(geoid);
+                          }}
+                          className="text-destructive hover:text-destructive/80 text-xs px-2 py-1 rounded border border-destructive/20 hover:bg-destructive/10"
+                        >
+                          Remove
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

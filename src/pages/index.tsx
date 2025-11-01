@@ -18,39 +18,32 @@ interface Variable {
 const Index = () => {
   const [variables, setVariables] = useState<Variable[]>([
     {
-      id: 'crashes',
-      name: 'Annual Vehicle Crashes',
-      value: [50, 150],
-      definition: 'The number of vehicle crashes that occurred in the census tract in 2024.',
-      min: 50,
-      max: 150,
-    },
-    {
       id: 'carfree',
       name: 'Percent Car-Free Households',
       value: [0, 100],
-      definition: 'Car-free households are those that do not own any motor vehicles.',
+      definition: 'Car-free households are those that do not own any motor vehicles. Calculated from ACS table B25044.',
+      max: 100,
+    },
+    {
+      id: 'income',
+      name: 'Median Household Income',
+      value: [0, 200000],
+      definition: 'The median income of all households in the census tract (ACS table B19013).',
+      min: 0,
+      max: 200000,
+    },
+    {
+      id: 'transit',
+      name: 'Transit Access Score',
+      value: [0, 100],
+      definition: 'Percent of people who use public transit to commute. Calculated from ACS table B08301 (Means of Transportation to Work).',
       max: 100,
     },
     {
       id: 'vulnerable',
       name: 'Percent Vulnerable Residents',
       value: [0, 100],
-      definition: 'Vulnerable residents are children, seniors, and individuals who identify as disabled.',
-      max: 100,
-    },
-    {
-      id: 'income',
-      name: 'Median Household Income',
-      value: [0, 100],
-      definition: 'The median income of all households in the census tract.',
-      max: 100,
-    },
-    {
-      id: 'transit',
-      name: 'Transit Access Score',
-      value: [0, 100],
-      definition: 'A composite score measuring proximity and frequency of public transportation options.',
+      definition: 'Combined metric: children (under 18), seniors (65+), and individuals with disabilities. Calculated from ACS tables B01001 (age) and B18101 (disability).',
       max: 100,
     },
   ]);
@@ -64,17 +57,35 @@ const Index = () => {
     );
   };
 
-  const handleTractSelect = (tract: any) => {
+  const handleTractSelect = async (tract: any) => {
+    // Handle both feature format and direct data format
+    const tractData = tract.properties || tract;
+    const geoid = tractData.GEOID || tract.GEOID;
+    
+    if (!geoid) return;
+    
     // Check if tract is already selected
-    const isAlreadySelected = selectedTracts.some(t => t.properties.GEOID === tract.properties.GEOID);
+    const isAlreadySelected = selectedTracts.some(t => {
+      const tGeoid = t.properties?.GEOID || t.GEOID;
+      return tGeoid === geoid;
+    });
     
     if (!isAlreadySelected) {
-      setSelectedTracts(prev => [...prev, tract]);
+      // Ensure we're storing in a consistent format
+      const fullTractData = {
+        properties: tractData,
+        ...tract
+      };
+      
+      setSelectedTracts(prev => [...prev, fullTractData]);
     }
   };
 
   const handleTractRemove = (tractId: string) => {
-    setSelectedTracts(prev => prev.filter(tract => tract.properties.GEOID !== tractId));
+    setSelectedTracts(prev => prev.filter(tract => {
+      const tGeoid = tract.properties?.GEOID || tract.GEOID;
+      return tGeoid !== tractId;
+    }));
   };
 
   const handleTractHover = (tract: any) => {
@@ -134,7 +145,7 @@ const Index = () => {
       </aside>
 
         {/* Map View */}
-        <main className="flex-1">
+        <main className="flex-1 relative pb-12">
           <MapView 
             variables={variables} 
             selectedTracts={selectedTracts}
