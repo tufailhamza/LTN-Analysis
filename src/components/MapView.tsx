@@ -37,19 +37,20 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
 
   // Filter tracts based on variable sliders - MUST be defined before useMemo
   // Uses AND logic: tract matches if it satisfies ALL filter criteria simultaneously
+  // Initially (no filters), all polygons are shown and styled in yellow
   const isTractMatchingFilters = (tractData: any): boolean => {
-    if (!tractData) {
-      // Don't show tracts without data - strict filtering
-      return false;
-    }
-    
-    // If no variables defined, show all
+    // If no variables/filters defined, consider all tracts as matching (show in yellow)
     if (variables.length === 0) {
       return true;
     }
     
+    // If tract has no data but filters are active, don't match (show in grey)
+    if (!tractData) {
+      return false;
+    }
+    
     // Check if tract matches ALL variable filters (AND logic)
-    // Tract must match ALL active filters to be shown
+    // Tract must match ALL active filters to be shown in yellow
     const allMatch = variables.every((variable) => {
       const value = variable.value;
       const [min, max] = value;
@@ -87,9 +88,8 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
           return true; // Unknown variable, don't filter
       }
       
-      // If value is missing, show it only if this variable's filter is at "show all" range
+      // If value is missing, don't match (will show in grey)
       if (tractValue === undefined || isNaN(tractValue)) {
-        // Don't show tracts with missing data - strict filtering
         return false;
       }
       
@@ -175,16 +175,18 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
   };
 
   // Filter function is defined above (line 38), now use it for styling
+  // All polygons are displayed initially, with matching ones styled in yellow
   const getTractStyle = (feature: any) => {
     const isSelected = selectedTracts.some(tract => {
       const tGeoid = tract.properties?.GEOID || tract.GEOID;
       return tGeoid === feature.properties.GEOID;
     });
     
-    // Check if tract matches current filters
+    // Check if tract matches current filters (or no filters = all match initially)
     const matchesFilters = isTractMatchingFilters(feature.properties);
     
     // Style based on selection and filter match
+    // Priority: Selected (blue) > Matching filters (yellow) > Non-matching (grey)
     if (isSelected) {
       // Selected tracts: Blue fill with blue border (highest priority)
       return {
@@ -194,7 +196,8 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
         fillOpacity: 0.8,
       };
     } else if (matchesFilters) {
-      // Matching filters: Yellow outline with light yellow fill
+      // Matching filters or no filters: Yellow outline with light yellow fill
+      // Initially (no filters), all polygons will be styled in yellow
       return {
         fillColor: '#fff9c4', // Light yellow fill
         weight: 2.5,
@@ -203,6 +206,7 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
       };
     } else {
       // Not matching filters: Grey outline with light grey fill
+      // Only shown when filters are active and tract doesn't match
       return {
         fillColor: '#f5f5f5', // Light grey fill
         weight: 1,
