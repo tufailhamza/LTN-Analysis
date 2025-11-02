@@ -27,15 +27,15 @@ interface MapViewProps {
   selectedTracts: any[];
   onTractSelect: (tract: any) => void;
   onTractHover: (tract: any) => void;
-  highlightedTractId?: string | null;
+  onTractHighlight?: (tractId: string) => void;
 }
 
-const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, highlightedTractId }: MapViewProps) => {
+const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTractHighlight }: MapViewProps) => {
   const mapRef = useRef<L.Map>(null);
   const { geoJsonData, loading, error } = useCensusData();
   const [hoveredTractData, setHoveredTractData] = useState<any>(null);
   const [loadingTract, setLoadingTract] = useState<string | null>(null);
-  const layerRef = useRef<Map<string, L.Layer>>(new Map());
+  const layerRef = useRef<Map<string, L.Layer>>(new Map()); // Store layer references by GEOID
 
   // Filter tracts based on variable sliders - MUST be defined before useMemo
   // Uses AND logic: tract matches if it satisfies ALL filter criteria simultaneously
@@ -254,65 +254,6 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, highl
     `;
   };
 
-  // Handle tract highlighting - pan to tract and highlight it
-  useEffect(() => {
-    if (highlightedTractId && mapRef.current) {
-      const layer = layerRef.current.get(highlightedTractId);
-      if (layer && (layer as any).getBounds) {
-        // Get the bounds of the feature (works for Polygon, MultiPolygon, etc.)
-        const bounds = (layer as any).getBounds();
-        // Pan and zoom to the feature with some padding
-        mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
-        
-        // Temporarily highlight the tract with a pulsing effect
-        if (layer instanceof L.Path || (layer as any).setStyle) {
-          (layer as any).setStyle({
-            weight: 5,
-            color: '#ff0000',
-            fillColor: '#ff0000',
-            fillOpacity: 0.3,
-          });
-        }
-        
-        // Reset after 2 seconds
-        const timer = setTimeout(() => {
-          if (layer instanceof L.Path || (layer as any).setStyle) {
-            const isSelected = selectedTracts.some(tract => {
-              const tGeoid = tract.properties?.GEOID || tract.GEOID;
-              return tGeoid === highlightedTractId;
-            });
-            const matchesFilters = isTractMatchingFilters((layer as any).feature?.properties);
-            
-            if (isSelected) {
-              (layer as any).setStyle({
-                fillColor: '#2196f3',
-                weight: 3,
-                color: '#1976d2',
-                fillOpacity: 0.8,
-              });
-            } else if (matchesFilters) {
-              (layer as any).setStyle({
-                fillColor: '#fff9c4',
-                weight: 2.5,
-                color: '#fdd835',
-                fillOpacity: 0.6,
-              });
-            } else {
-              (layer as any).setStyle({
-                fillColor: '#f5f5f5',
-                weight: 1,
-                color: '#9e9e9e',
-                fillOpacity: 0.3,
-              });
-            }
-          }
-        }, 2000);
-        
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [highlightedTractId, selectedTracts, variables]);
-
   // Force style updates when variables or selectedTracts change
   // This ensures all polygons update their colors when filters change
   useEffect(() => {
@@ -327,12 +268,6 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, highl
         mapRef.current?.eachLayer((layer: any) => {
           // Check if this is a GeoJSON layer (has feature property)
           if (layer.feature) {
-            // Skip if this is the currently highlighted tract (to preserve highlight)
-            const geoid = layer.feature.properties?.GEOID;
-            if (geoid === highlightedTractId) {
-              return; // Don't update style for highlighted tract
-            }
-            
             const style = getTractStyle(layer.feature);
             layer.setStyle(style);
             updatedCount++;
@@ -349,7 +284,55 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, highl
       
       return () => clearTimeout(timer);
     }
-  }, [variables, selectedTracts, displayGeoJsonData, highlightedTractId]);
+  }, [variables, selectedTracts, displayGeoJsonData]);
+
+  // Handle tract highlighting from external triggers (e.g., ResultsPanel)
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const handleHighlight = (tractId: string) => {
+      const layer = layerRef.current.get(tractId);
+      if (!layer) {
+        console.warn(`Tract ${tractId} not found on map`);
+        return;
+      }
+
+      // Get the bounds of the feature
+      const bounds = (layer as any).getBounds?.();
+      if (bounds && mapRef.current) {
+        // Zoom to the tract with some padding
+        mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+      }
+
+      // Flash highlight effect
+      const originalStyle = {
+        fillColor: (layer as any).options.fillColor || '#fff9c4',
+        weight: (layer as any).options.weight || 2.5,
+        color: (layer as any).options.color || '#fdd835',
+        fillOpacity: (layer as any).options.fillOpacity || 0.6,
+      };
+
+      // Highlight with bright orange/red
+      (layer as L.Path).setStyle({
+        fillColor: '#ff6b6b',
+        weight: 4,
+        color: '#ff3333',
+        fillOpacity: 0.9,
+      });
+
+      // Restore original style after 2 seconds
+      setTimeout(() => {
+        (layer as L.Path).setStyle(originalStyle);
+      }, 2000);
+    };
+
+    // Store the handler so it can be called from parent
+    (window as any).__highlightTract = handleHighlight;
+    
+    return () => {
+      delete (window as any).__highlightTract;
+    };
+  }, []);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const popupContent = formatPopupContent(feature.properties);
@@ -490,13 +473,12 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, highl
   }
 
   return (
-    <div className="relative w-full h-full overflow-visible" style={{ zIndex: 1 }}>
+    <div className="relative w-full h-full overflow-visible">
       <MapContainer
         center={[40.7128, -74.0060]} // NYC coordinates [lat, lon]
         zoom={10}
         className="h-full w-full"
         ref={mapRef}
-        style={{ zIndex: 1 }}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

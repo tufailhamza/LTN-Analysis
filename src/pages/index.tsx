@@ -50,7 +50,6 @@ const Index = () => {
 
   const [selectedTracts, setSelectedTracts] = useState<any[]>([]);
   const [hoveredTract, setHoveredTract] = useState<any>(null);
-  const [highlightedTractId, setHighlightedTractId] = useState<string | null>(null);
 
   const handleVariableChange = (id: string, value: [number, number]) => {
     setVariables((prev) =>
@@ -94,12 +93,10 @@ const Index = () => {
   };
 
   const handleTractHighlight = (tractId: string) => {
-    // Highlight the tract on the map
-    setHighlightedTractId(tractId);
-    // Clear highlight after a delay (the MapView will handle the visual highlight)
-    setTimeout(() => {
-      setHighlightedTractId(null);
-    }, 2100); // Slightly longer than the highlight duration in MapView
+    // Trigger highlight on the map
+    if ((window as any).__highlightTract) {
+      (window as any).__highlightTract(tractId);
+    }
   };
 
   return (
@@ -156,7 +153,7 @@ const Index = () => {
             selectedTracts={selectedTracts}
             onTractSelect={handleTractSelect}
             onTractHover={handleTractHover}
-            highlightedTractId={highlightedTractId}
+            onTractHighlight={handleTractHighlight}
           />
         </main>
       </div>

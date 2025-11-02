@@ -24,9 +24,6 @@ interface ResultsPanelProps {
   onTractHighlight: (tractId: string) => void;
 }
 
-type SortColumn = 'name' | 'carfree' | 'income' | 'transit' | 'vulnerable' | null;
-type SortDirection = 'asc' | 'desc' | null;
-
 // Mock data for census tracts
 const mockCensusTracts = [
   { id: '36061000100', name: 'Manhattan - Tract 1', crashes: 45, carfree: 65, vulnerable: 28, income: 85000, transit: 95 },
@@ -36,22 +33,20 @@ const mockCensusTracts = [
   { id: '36061000500', name: 'Staten Island - Tract 5', crashes: 34, carfree: 25, vulnerable: 22, income: 72000, transit: 48 },
 ];
 
+type SortColumn = 'name' | 'carfree' | 'income' | 'transit' | 'vulnerable';
+type SortDirection = 'asc' | 'desc' | null;
+
 const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlight }: ResultsPanelProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [sortColumn, setSortColumn] = useState<SortColumn>(null);
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
-  // Handle column header click for sorting
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
-      // Cycle through: asc -> desc -> null (no sort)
-      if (sortDirection === 'asc') {
-        setSortDirection('desc');
-      } else if (sortDirection === 'desc') {
+      // Toggle direction if same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : sortDirection === 'desc' ? null : 'asc');
+      if (sortDirection === 'desc') {
         setSortColumn(null);
-        setSortDirection(null);
-      } else {
-        setSortDirection('asc');
       }
     } else {
       setSortColumn(column);
@@ -59,7 +54,6 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
     }
   };
 
-  // Sort the tracts based on current sort column and direction
   const sortedTracts = useMemo(() => {
     if (!sortColumn || !sortDirection) {
       return selectedTracts;
@@ -69,71 +63,57 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
       const aData = a.properties || a;
       const bData = b.properties || b;
 
-      let aValue: string | number | undefined;
-      let bValue: string | number | undefined;
+      let aValue: string | number;
+      let bValue: string | number;
 
       switch (sortColumn) {
         case 'name':
           aValue = aData.NAME || aData.name || `Tract ${aData.tract || ''}`;
           bValue = bData.NAME || bData.name || `Tract ${bData.tract || ''}`;
-          // String comparison
-          if (typeof aValue === 'string' && typeof bValue === 'string') {
-            return sortDirection === 'asc' 
-              ? aValue.localeCompare(bValue)
-              : bValue.localeCompare(aValue);
-          }
-          return 0;
-        
+          break;
         case 'carfree':
-          aValue = aData.carfree !== undefined ? parseFloat(String(aData.carfree)) : undefined;
-          bValue = bData.carfree !== undefined ? parseFloat(String(bData.carfree)) : undefined;
+          aValue = aData.carfree !== undefined ? Number(aData.carfree) : -Infinity;
+          bValue = bData.carfree !== undefined ? Number(bData.carfree) : -Infinity;
           break;
-        
         case 'income':
-          aValue = aData.income ? parseInt(String(aData.income)) : undefined;
-          bValue = bData.income ? parseInt(String(bData.income)) : undefined;
+          aValue = aData.income ? Number(aData.income) : -Infinity;
+          bValue = bData.income ? Number(bData.income) : -Infinity;
           break;
-        
         case 'transit':
-          aValue = aData.transit !== undefined ? parseFloat(String(aData.transit)) : undefined;
-          bValue = bData.transit !== undefined ? parseFloat(String(bData.transit)) : undefined;
+          aValue = aData.transit !== undefined ? Number(aData.transit) : -Infinity;
+          bValue = bData.transit !== undefined ? Number(bData.transit) : -Infinity;
           break;
-        
         case 'vulnerable':
-          aValue = aData.vulnerable !== undefined ? parseFloat(String(aData.vulnerable)) : undefined;
-          bValue = bData.vulnerable !== undefined ? parseFloat(String(bData.vulnerable)) : undefined;
+          aValue = aData.vulnerable !== undefined ? Number(aData.vulnerable) : -Infinity;
+          bValue = bData.vulnerable !== undefined ? Number(bData.vulnerable) : -Infinity;
           break;
-        
         default:
           return 0;
       }
 
-      // Handle undefined/null values - put them at the end
-      if (aValue === undefined && bValue === undefined) return 0;
-      if (aValue === undefined) return 1;
-      if (bValue === undefined) return -1;
-
-      // Numeric comparison
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+      // Handle string comparison for name
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.localeCompare(bValue, undefined, { numeric: true, sensitivity: 'base' });
+        return sortDirection === 'asc' ? comparison : -comparison;
       }
 
-      return 0;
+      // Handle numeric comparison
+      const comparison = (aValue as number) - (bValue as number);
+      return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [selectedTracts, sortColumn, sortDirection]);
 
-  // Render sort icon based on sort state
-  const renderSortIcon = (column: SortColumn) => {
+  const getSortIcon = (column: SortColumn) => {
     if (sortColumn !== column) {
-      return <ArrowUpDown className="h-4 w-4 text-muted-foreground" />;
+      return <ArrowUpDown className="h-4 w-4 opacity-50" />;
     }
     if (sortDirection === 'asc') {
-      return <ArrowUp className="h-4 w-4 text-foreground" />;
+      return <ArrowUp className="h-4 w-4" />;
     }
     if (sortDirection === 'desc') {
-      return <ArrowDown className="h-4 w-4 text-foreground" />;
+      return <ArrowDown className="h-4 w-4" />;
     }
-    return <ArrowUpDown className="h-4 w-4 text-muted-foreground" />;
+    return <ArrowUpDown className="h-4 w-4 opacity-50" />;
   };
 
   return (
@@ -181,81 +161,51 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
                   <TableHead className="font-semibold">
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-auto p-0 font-semibold hover:bg-transparent -ml-4"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSort('name');
-                      }}
+                      onClick={() => handleSort('name')}
+                      className="h-auto p-0 font-semibold hover:bg-transparent flex items-center gap-1"
                     >
-                      <div className="flex items-center gap-2">
-                        Census Tract
-                        {renderSortIcon('name')}
-                      </div>
+                      Census Tract
+                      {getSortIcon('name')}
                     </Button>
                   </TableHead>
                   <TableHead className="font-semibold text-right">
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-auto p-0 font-semibold hover:bg-transparent -mr-4"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSort('carfree');
-                      }}
+                      onClick={() => handleSort('carfree')}
+                      className="h-auto p-0 font-semibold hover:bg-transparent flex items-center gap-1 ml-auto"
                     >
-                      <div className="flex items-center gap-2 justify-end">
-                        Car-Free Households (%)
-                        {renderSortIcon('carfree')}
-                      </div>
+                      Car-Free Households (%)
+                      {getSortIcon('carfree')}
                     </Button>
                   </TableHead>
                   <TableHead className="font-semibold text-right">
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-auto p-0 font-semibold hover:bg-transparent -mr-4"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSort('income');
-                      }}
+                      onClick={() => handleSort('income')}
+                      className="h-auto p-0 font-semibold hover:bg-transparent flex items-center gap-1 ml-auto"
                     >
-                      <div className="flex items-center gap-2 justify-end">
-                        Median Income ($)
-                        {renderSortIcon('income')}
-                      </div>
+                      Median Income ($)
+                      {getSortIcon('income')}
                     </Button>
                   </TableHead>
                   <TableHead className="font-semibold text-right">
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-auto p-0 font-semibold hover:bg-transparent -mr-4"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSort('transit');
-                      }}
+                      onClick={() => handleSort('transit')}
+                      className="h-auto p-0 font-semibold hover:bg-transparent flex items-center gap-1 ml-auto"
                     >
-                      <div className="flex items-center gap-2 justify-end">
-                        Transit Access Score (%)
-                        {renderSortIcon('transit')}
-                      </div>
+                      Transit Access Score (%)
+                      {getSortIcon('transit')}
                     </Button>
                   </TableHead>
                   <TableHead className="font-semibold text-right">
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-auto p-0 font-semibold hover:bg-transparent -mr-4"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSort('vulnerable');
-                      }}
+                      onClick={() => handleSort('vulnerable')}
+                      className="h-auto p-0 font-semibold hover:bg-transparent flex items-center gap-1 ml-auto"
                     >
-                      <div className="flex items-center gap-2 justify-end">
-                        Vulnerable Residents (%)
-                        {renderSortIcon('vulnerable')}
-                      </div>
+                      Vulnerable Residents (%)
+                      {getSortIcon('vulnerable')}
                     </Button>
                   </TableHead>
                   <TableHead className="font-semibold text-center">Actions</TableHead>
@@ -280,7 +230,7 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
                             e.stopPropagation();
                             onTractHighlight(geoid);
                           }}
-                          className="text-left text-blue-600 hover:text-blue-800 hover:underline transition-colors font-medium"
+                          className="text-primary hover:text-primary/80 hover:underline font-medium"
                         >
                           {name}
                         </button>
