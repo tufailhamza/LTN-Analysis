@@ -87,31 +87,24 @@ function validateAndFixGeometry(
  * Fetch NYC census tract GeoJSON data
  * 
  * Sources:
- * 1. NYC Open Data Portal
- * 2. Census TIGER/Line (processed)
- * 3. Public GitHub repos with pre-processed GeoJSON
+ * 1. NYC Open Data Portal (Primary) - https://data.cityofnewyork.us/resource/63ge-mke6.geojson
+ * 2. Census TIGER/Line (fallback)
+ * 3. Mock data (final fallback)
  */
 export async function fetchNYCTractsGeoJSON(): Promise<GeoJSONData | null> {
   try {
-    // Official Census TIGERweb REST API - Most reliable source for tract boundaries
-    // NYC Counties: 005 (Bronx), 047 (Brooklyn), 061 (Manhattan), 081 (Queens), 085 (Staten Island)
-    
-    const baseUrl = 'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Tracts_Blocks/MapServer/tracts/query';
     const nycCounties = ['005', '047', '061', '081', '085'];
     
-    // Build query for all NYC counties
-    const countyFilter = nycCounties.map(c => `COUNTY='${c}'`).join('%20OR%20');
-    const whereClause = `STATE='36'%20AND%20(${countyFilter})`;
+    // Primary source: NYC Open Data Portal
+    const nycOpenDataUrl = 'https://data.cityofnewyork.us/resource/63ge-mke6.geojson';
     
-    const tigerWebUrl = `${baseUrl}?where=${whereClause}&outFields=GEOID,NAME,COUNTY,STATE&outSR=4326&f=geojson&resultRecordCount=10000`;
-    
-    console.log('Fetching tract boundaries from Census TIGERweb API...');
+    console.log('Fetching tract boundaries from NYC Open Data Portal...');
     
     try {
-      const response = await fetch(tigerWebUrl);
+      const response = await fetch(nycOpenDataUrl);
       
       if (!response.ok) {
-        throw new Error(`TIGERweb API returned ${response.status}: ${response.statusText}`);
+        throw new Error(`NYC Open Data API returned ${response.status}: ${response.statusText}`);
       }
       
       const data: GeoJSONData = await response.json();
@@ -147,29 +140,31 @@ export async function fetchNYCTractsGeoJSON(): Promise<GeoJSONData | null> {
          * - Names containing "water" or special identifiers
          */
         const isWaterTract = (feature: GeoJSONFeature): boolean => {
-          const geoid = feature.properties?.GEOID || '';
-          const name = String(feature.properties?.NAME || '').toLowerCase();
+          const geoid = feature.properties?.GEOID || feature.properties?.geoid || '';
+          const name = String(feature.properties?.NAME || feature.properties?.ntaname || '').toLowerCase();
           
           // Check tract code - water tracts often end in .00, .01, .98, .99
-          const tractCode = geoid.substring(5); // Last 6 digits
-          const tractDecimal = parseFloat(`0.${tractCode.substring(3)}`);
-          if (tractDecimal === 0 || tractDecimal === 0.01 || tractDecimal === 0.98 || tractDecimal === 0.99) {
-            // Could be water, check area
-            if (feature.geometry) {
-              let area = 0;
-              if (feature.geometry.type === 'Polygon') {
-                const coords = (feature.geometry.coordinates as number[][][])[0];
-                area = calculatePolygonArea(coords);
-              } else if (feature.geometry.type === 'MultiPolygon') {
-                const polygons = feature.geometry.coordinates as number[][][][];
-                polygons.forEach(poly => {
-                  area += calculatePolygonArea(poly[0]);
-                });
-              }
-              
-              // Very small areas are likely water-only tracts
-              if (area < 0.00001) { // Very small threshold for water tracts
-                return true;
+          if (geoid.length >= 11) {
+            const tractCode = geoid.substring(5); // Last 6 digits
+            const tractDecimal = parseFloat(`0.${tractCode.substring(3)}`);
+            if (tractDecimal === 0 || tractDecimal === 0.01 || tractDecimal === 0.98 || tractDecimal === 0.99) {
+              // Could be water, check area
+              if (feature.geometry) {
+                let area = 0;
+                if (feature.geometry.type === 'Polygon') {
+                  const coords = (feature.geometry.coordinates as number[][][])[0];
+                  area = calculatePolygonArea(coords);
+                } else if (feature.geometry.type === 'MultiPolygon') {
+                  const polygons = feature.geometry.coordinates as number[][][][];
+                  polygons.forEach(poly => {
+                    area += calculatePolygonArea(poly[0]);
+                  });
+                }
+                
+                // Very small areas are likely water-only tracts
+                if (area < 0.00001) { // Very small threshold for water tracts
+                  return true;
+                }
               }
             }
           }
@@ -185,15 +180,24 @@ export async function fetchNYCTractsGeoJSON(): Promise<GeoJSONData | null> {
         // Normalize and validate features
         data.features = data.features
           .filter((feature) => {
-            // Ensure it's a valid NYC county
-            const county = String(feature.properties?.COUNTY || '').padStart(3, '0');
-            if (!nycCounties.includes(county) || !feature.properties?.GEOID) {
+            // Check for GEOID - NYC Open Data uses 'geoid' field
+            const geoid = feature.properties?.GEOID || feature.properties?.geoid;
+            if (!geoid) {
               return false;
+            }
+            
+            // Extract county from GEOID (positions 2-4: 36061000100 -> 061)
+            const geoidStr = String(geoid).replace(/\s+/g, '');
+            if (geoidStr.length >= 11) {
+              const county = geoidStr.substring(2, 5);
+              if (!nycCounties.includes(county)) {
+                return false;
+              }
             }
             
             // Validate geometry exists
             if (!feature.geometry || !feature.geometry.coordinates) {
-              console.warn('Feature missing geometry:', feature.properties?.GEOID);
+              console.warn('Feature missing geometry:', geoid);
               return false;
             }
             
@@ -206,29 +210,52 @@ export async function fetchNYCTractsGeoJSON(): Promise<GeoJSONData | null> {
           })
           .map((feature) => {
             if (feature.properties) {
-              // Normalize GEOID - should be 11 digits (State + County + Tract)
-              let geoid = String(feature.properties.GEOID || '').replace(/\s+/g, '');
-              
-              // If GEOID is missing or incomplete, construct it
-              if (!geoid || geoid.length < 11) {
-                const state = feature.properties.STATE || '36';
-                const county = String(feature.properties.COUNTY || '').padStart(3, '0');
-                const tract = feature.properties.TRACT || feature.properties.TRACTCE || '';
-                geoid = `${state}${county}${String(tract).padStart(6, '0')}`;
-              }
+              // Normalize GEOID - NYC Open Data uses 'geoid' field (may be uppercase or lowercase)
+              let geoid = String(feature.properties.GEOID || feature.properties.geoid || '').replace(/\s+/g, '');
               
               // Ensure GEOID is exactly 11 characters
-              feature.properties.GEOID = geoid.substring(0, 11);
-              
-              // Ensure NAME field exists
-              if (!feature.properties.NAME) {
-                feature.properties.NAME = feature.properties.NAMELSAD || 
-                                          `Tract ${feature.properties.TRACT || ''}`;
+              if (geoid.length >= 11) {
+                feature.properties.GEOID = geoid.substring(0, 11);
+              } else if (geoid.length > 0) {
+                // Try to pad if incomplete
+                feature.properties.GEOID = geoid.padEnd(11, '0');
+              } else {
+                // Skip if no GEOID at all
+                console.warn('Feature missing GEOID:', feature.properties);
               }
               
-              // Store normalized county
-              feature.properties.county = String(feature.properties.COUNTY || '').padStart(3, '0');
-              feature.properties.state = String(feature.properties.STATE || '36');
+              // Extract county from GEOID
+              if (feature.properties.GEOID && feature.properties.GEOID.length >= 11) {
+                feature.properties.county = feature.properties.GEOID.substring(2, 5);
+              } else if (feature.properties.borocode) {
+                // Map borocode to county FIPS
+                const borocodeMap: Record<string, string> = {
+                  '1': '061', // Manhattan
+                  '2': '005', // Bronx
+                  '3': '047', // Brooklyn
+                  '4': '081', // Queens
+                  '5': '085'  // Staten Island
+                };
+                feature.properties.county = borocodeMap[String(feature.properties.borocode)] || '';
+              }
+              
+              // Ensure NAME field exists - use ctlabel or construct from ntaname
+              if (!feature.properties.NAME) {
+                feature.properties.NAME = feature.properties.ctlabel || 
+                                          feature.properties.ntaname || 
+                                          `Tract ${feature.properties.GEOID?.substring(5) || ''}`;
+              }
+              
+              // Store state (NY is 36)
+              feature.properties.state = '36';
+              
+              // Preserve other NYC Open Data fields
+              if (feature.properties.ntaname) {
+                feature.properties.ntaname = feature.properties.ntaname;
+              }
+              if (feature.properties.boroname) {
+                feature.properties.boroname = feature.properties.boroname;
+              }
             }
             
             // Validate and fix geometry coordinates
@@ -239,14 +266,16 @@ export async function fetchNYCTractsGeoJSON(): Promise<GeoJSONData | null> {
             return feature;
           })
           .filter((feature) => {
-            // Final filter: ensure geometry is still valid after processing
-            return feature.geometry && feature.geometry.coordinates && 
+            // Final filter: ensure geometry is still valid after processing and has GEOID
+            return feature.properties?.GEOID && 
+                   feature.geometry && 
+                   feature.geometry.coordinates && 
                    feature.geometry.coordinates.length > 0;
           });
         
         const afterWaterFilter = data.features.length;
         
-        console.log(`✅ Successfully loaded ${afterWaterFilter} census tract boundaries from Census TIGERweb API`);
+        console.log(`✅ Successfully loaded ${afterWaterFilter} census tract boundaries from NYC Open Data Portal`);
         console.log(`🏞️ Filtered out water-only tracts - showing only land-based tracts`);
         
         // Sample a few features to check coordinate ranges
@@ -286,16 +315,20 @@ export async function fetchNYCTractsGeoJSON(): Promise<GeoJSONData | null> {
         
         return data;
       } else {
-        throw new Error('TIGERweb API returned no features');
+        throw new Error('NYC Open Data API returned no features');
       }
     } catch (fetchError) {
-      console.error('❌ Failed to fetch from Census TIGERweb API:', fetchError);
+      console.error('❌ Failed to fetch from NYC Open Data Portal:', fetchError);
       
-      // Fallback: Try NYC Open Data Portal
-      console.log('🔄 Trying fallback: NYC Open Data Portal...');
+      // Fallback: Try Census TIGERweb REST API
+      console.log('🔄 Trying fallback: Census TIGERweb API...');
       try {
-        const nycOpenDataUrl = 'https://services5.arcgis.com/GWWN6oDUlXqXy9Ur/arcgis/rest/services/2020_Census_Tracts/FeatureServer/0/query?where=COUNTY_FIPS%20IN%20(%27005%27%2C%27047%27%2C%27061%27%2C%27081%27%2C%27085%27)&outFields=*&outSR=4326&f=geojson&resultRecordCount=10000';
-        const response = await fetch(nycOpenDataUrl);
+        const baseUrl = 'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Tracts_Blocks/MapServer/tracts/query';
+        const countyFilter = nycCounties.map(c => `COUNTY='${c}'`).join('%20OR%20');
+        const whereClause = `STATE='36'%20AND%20(${countyFilter})`;
+        const tigerWebUrl = `${baseUrl}?where=${whereClause}&outFields=GEOID,NAME,COUNTY,STATE&outSR=4326&f=geojson&resultRecordCount=10000`;
+        
+        const response = await fetch(tigerWebUrl);
         
         if (response.ok) {
           const data: GeoJSONData = await response.json();
