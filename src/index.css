@@ -112,3 +112,41 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* Fix tooltip z-index to appear above Leaflet map */
+@layer utilities {
+  /* Ensure Radix UI Tooltip portal renders above Leaflet */
+  [data-radix-portal] {
+    z-index: 9999 !important;
+    position: relative;
+  }
+  
+  /* Specific override for tooltip content - highest priority */
+  [data-radix-tooltip-content],
+  [data-radix-popper-content-wrapper] {
+    z-index: 99999 !important;
+    position: relative !important;
+  }
+  
+  /* Ensure Leaflet map container and all panes stay below tooltips */
+  .leaflet-container,
+  .leaflet-pane,
+  .leaflet-map-pane,
+  .leaflet-tile-pane,
+  .leaflet-overlay-pane,
+  .leaflet-shadow-pane,
+  .leaflet-marker-pane,
+  .leaflet-tooltip-pane,
+  .leaflet-popup-pane {
+    z-index: 1 !important;
+  }
+  
+  /* Ensure Leaflet controls also stay below tooltips */
+  .leaflet-top,
+  .leaflet-bottom,
+  .leaflet-left,
+  .leaflet-right,
+  .leaflet-control {
+    z-index: 100 !important;
+  }
+}

@@ -27,10 +27,10 @@ const Index = () => {
     {
       id: 'income',
       name: 'Median Household Income',
-      value: [0, 200000],
+      value: [0, 500000],
       definition: 'The median income of all households in the census tract (ACS table B19013).',
       min: 0,
-      max: 200000,
+      max: 500000,
     },
     {
       id: 'transit',
@@ -50,6 +50,7 @@ const Index = () => {
 
   const [selectedTracts, setSelectedTracts] = useState<any[]>([]);
   const [hoveredTract, setHoveredTract] = useState<any>(null);
+  const [highlightedTractId, setHighlightedTractId] = useState<string | null>(null);
 
   const handleVariableChange = (id: string, value: [number, number]) => {
     setVariables((prev) =>
@@ -93,8 +94,12 @@ const Index = () => {
   };
 
   const handleTractHighlight = (tractId: string) => {
-    // This could be used to highlight the tract on the map
-    console.log('Highlighting tract:', tractId);
+    // Highlight the tract on the map
+    setHighlightedTractId(tractId);
+    // Clear highlight after a delay (the MapView will handle the visual highlight)
+    setTimeout(() => {
+      setHighlightedTractId(null);
+    }, 2100); // Slightly longer than the highlight duration in MapView
   };
 
   return (
@@ -122,7 +127,7 @@ const Index = () => {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-96 border-r border-border bg-card overflow-y-auto">
+        <aside className="w-96 border-r border-border bg-card overflow-y-auto relative z-10">
           <div className="p-6 border-b border-border">
             <p className="text-sm text-muted-foreground">
               Use the filters in the left panel to identify which New York City neighborhoods could benefit the most from low traffic solutions based on key community and mobility indicators.
@@ -151,6 +156,7 @@ const Index = () => {
             selectedTracts={selectedTracts}
             onTractSelect={handleTractSelect}
             onTractHover={handleTractHover}
+            highlightedTractId={highlightedTractId}
           />
         </main>
       </div>

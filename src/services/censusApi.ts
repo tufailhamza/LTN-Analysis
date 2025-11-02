@@ -211,11 +211,25 @@ export function transformTractData(rawData: ParsedTractData): any {
     tract: rawData.tract,
   };
 
-  // Add raw variables
+  // Helper function to check if a value is a Census Bureau sentinel value
+  // Census API uses -666666666 and -999999999 to indicate missing/suppressed data
+  const isValidCensusValue = (value: any): boolean => {
+    if (value === null || value === undefined || value === '') return false;
+    const numValue = typeof value === 'string' ? parseFloat(value) : Number(value);
+    if (isNaN(numValue)) return false;
+    // Check for Census Bureau sentinel values (negative values with many 6s or 9s)
+    if (numValue < 0 && (numValue <= -666666666 || numValue <= -999999999)) return false;
+    return true;
+  };
+
+  // Add raw variables (filter out Census Bureau sentinel values)
   Object.keys(CENSUS_CONFIG.VARIABLES).forEach((key) => {
     const varCode = CENSUS_CONFIG.VARIABLES[key as keyof typeof CENSUS_CONFIG.VARIABLES];
-    if (rawData[varCode] !== undefined) {
+    if (rawData[varCode] !== undefined && isValidCensusValue(rawData[varCode])) {
       transformed[key] = rawData[varCode];
+    } else {
+      // Set to undefined for missing/invalid values
+      transformed[key] = undefined;
     }
   });
 
@@ -231,20 +245,29 @@ export function transformTractData(rawData: ParsedTractData): any {
   });
 
   // Format specific values for display
-  if (transformed.medianHouseholdIncome) {
-    transformed.income = parseInt(String(transformed.medianHouseholdIncome)) || 0;
+  // Filter out Census Bureau sentinel values (-666666666, -999999999, etc.)
+  if (transformed.medianHouseholdIncome && isValidCensusValue(transformed.medianHouseholdIncome)) {
+    transformed.income = parseInt(String(transformed.medianHouseholdIncome));
+  } else {
+    transformed.income = undefined; // Set to undefined so it displays as "N/A"
   }
 
-  if (transformed.carFreePercent) {
-    transformed.carfree = parseFloat(String(transformed.carFreePercent)) || 0;
+  if (transformed.carFreePercent && isValidCensusValue(transformed.carFreePercent)) {
+    transformed.carfree = parseFloat(String(transformed.carFreePercent));
+  } else {
+    transformed.carfree = undefined;
   }
 
-  if (transformed.transitScore) {
-    transformed.transit = parseInt(String(transformed.transitScore)) || 0;
+  if (transformed.transitScore && isValidCensusValue(transformed.transitScore)) {
+    transformed.transit = parseInt(String(transformed.transitScore));
+  } else {
+    transformed.transit = undefined;
   }
 
-  if (transformed.vulnerablePercent) {
-    transformed.vulnerable = parseFloat(String(transformed.vulnerablePercent)) || 0;
+  if (transformed.vulnerablePercent && isValidCensusValue(transformed.vulnerablePercent)) {
+    transformed.vulnerable = parseFloat(String(transformed.vulnerablePercent));
+  } else {
+    transformed.vulnerable = undefined;
   }
 
   // Note: Crashes data would need to come from a separate external API

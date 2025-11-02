@@ -27,13 +27,15 @@ interface MapViewProps {
   selectedTracts: any[];
   onTractSelect: (tract: any) => void;
   onTractHover: (tract: any) => void;
+  highlightedTractId?: string | null;
 }
 
-const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: MapViewProps) => {
+const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, highlightedTractId }: MapViewProps) => {
   const mapRef = useRef<L.Map>(null);
   const { geoJsonData, loading, error } = useCensusData();
   const [hoveredTractData, setHoveredTractData] = useState<any>(null);
   const [loadingTract, setLoadingTract] = useState<string | null>(null);
+  const layerRef = useRef<Map<string, L.Layer>>(new Map());
 
   // Filter tracts based on variable sliders - MUST be defined before useMemo
   // Uses AND logic: tract matches if it satisfies ALL filter criteria simultaneously
@@ -88,9 +90,19 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
           return true; // Unknown variable, don't filter
       }
       
-      // If value is missing, don't match (will show in grey)
-      if (tractValue === undefined || isNaN(tractValue)) {
-        return false;
+      // If value is missing or is a Census Bureau sentinel value
+      // Sentinel values: -666666666, -999999999 indicate missing/suppressed data
+      if (tractValue === undefined || isNaN(tractValue) || 
+          (typeof tractValue === 'number' && tractValue < 0 && (tractValue <= -666666666 || tractValue <= -999999999))) {
+        // If filter is at its initial/inclusive state (min = 0), allow missing data to match
+        // This means when filters are at default (min = 0), tracts with N/A data still show as yellow
+        // Once filters are adjusted above minimum, missing data will be excluded (grey)
+        // For income: if min is 0, include N/A tracts; if min > 0, exclude them
+        // For percentages: if min is 0, include N/A tracts; if min > 0, exclude them
+        if (min === 0) {
+          return true; // Allow missing data when filter is at minimum (0 = inclusive/default state)
+        }
+        return false; // Exclude missing data when filter has been adjusted above minimum
       }
       
       // Check if value is within slider range
@@ -242,6 +254,65 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
     `;
   };
 
+  // Handle tract highlighting - pan to tract and highlight it
+  useEffect(() => {
+    if (highlightedTractId && mapRef.current) {
+      const layer = layerRef.current.get(highlightedTractId);
+      if (layer && (layer as any).getBounds) {
+        // Get the bounds of the feature (works for Polygon, MultiPolygon, etc.)
+        const bounds = (layer as any).getBounds();
+        // Pan and zoom to the feature with some padding
+        mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+        
+        // Temporarily highlight the tract with a pulsing effect
+        if (layer instanceof L.Path || (layer as any).setStyle) {
+          (layer as any).setStyle({
+            weight: 5,
+            color: '#ff0000',
+            fillColor: '#ff0000',
+            fillOpacity: 0.3,
+          });
+        }
+        
+        // Reset after 2 seconds
+        const timer = setTimeout(() => {
+          if (layer instanceof L.Path || (layer as any).setStyle) {
+            const isSelected = selectedTracts.some(tract => {
+              const tGeoid = tract.properties?.GEOID || tract.GEOID;
+              return tGeoid === highlightedTractId;
+            });
+            const matchesFilters = isTractMatchingFilters((layer as any).feature?.properties);
+            
+            if (isSelected) {
+              (layer as any).setStyle({
+                fillColor: '#2196f3',
+                weight: 3,
+                color: '#1976d2',
+                fillOpacity: 0.8,
+              });
+            } else if (matchesFilters) {
+              (layer as any).setStyle({
+                fillColor: '#fff9c4',
+                weight: 2.5,
+                color: '#fdd835',
+                fillOpacity: 0.6,
+              });
+            } else {
+              (layer as any).setStyle({
+                fillColor: '#f5f5f5',
+                weight: 1,
+                color: '#9e9e9e',
+                fillOpacity: 0.3,
+              });
+            }
+          }
+        }, 2000);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [highlightedTractId, selectedTracts, variables]);
+
   // Force style updates when variables or selectedTracts change
   // This ensures all polygons update their colors when filters change
   useEffect(() => {
@@ -256,6 +327,12 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
         mapRef.current?.eachLayer((layer: any) => {
           // Check if this is a GeoJSON layer (has feature property)
           if (layer.feature) {
+            // Skip if this is the currently highlighted tract (to preserve highlight)
+            const geoid = layer.feature.properties?.GEOID;
+            if (geoid === highlightedTractId) {
+              return; // Don't update style for highlighted tract
+            }
+            
             const style = getTractStyle(layer.feature);
             layer.setStyle(style);
             updatedCount++;
@@ -272,7 +349,7 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
       
       return () => clearTimeout(timer);
     }
-  }, [variables, selectedTracts, displayGeoJsonData]);
+  }, [variables, selectedTracts, displayGeoJsonData, highlightedTractId]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const popupContent = formatPopupContent(feature.properties);
@@ -280,6 +357,12 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
     
     // Store feature reference on layer for style updates
     (layer as any).feature = feature;
+    
+    // Store layer reference by GEOID for highlighting
+    const geoid = feature.properties.GEOID;
+    if (geoid) {
+      layerRef.current.set(geoid, layer);
+    }
 
     layer.on({
       mouseover: async (e) => {
@@ -407,12 +490,13 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover }: Map
   }
 
   return (
-    <div className="relative w-full h-full overflow-visible">
+    <div className="relative w-full h-full overflow-visible" style={{ zIndex: 1 }}>
       <MapContainer
         center={[40.7128, -74.0060]} // NYC coordinates [lat, lon]
         zoom={10}
         className="h-full w-full"
         ref={mapRef}
+        style={{ zIndex: 1 }}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
