@@ -287,9 +287,20 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
   }, [variables, selectedTracts, displayGeoJsonData]);
 
   // Handle tract highlighting from external triggers (e.g., ResultsPanel)
-  const handleHighlight = useCallback((tractId: string) => {
-    if (!tractId || !mapRef.current) {
-      console.warn('Invalid tractId or map not initialized');
+  const handleHighlight = useCallback((tractId: string, retryCount = 0) => {
+    if (!tractId) {
+      console.warn('Invalid tractId');
+      return;
+    }
+
+    // Wait a bit for map to be ready if it's not yet (max 10 retries)
+    if (!mapRef.current && retryCount < 10) {
+      setTimeout(() => handleHighlight(tractId, retryCount + 1), 100);
+      return;
+    }
+
+    if (!mapRef.current) {
+      console.warn('Map not initialized after retries');
       return;
     }
 
@@ -340,9 +351,8 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
     }, 2000);
   }, []);
 
+  // Set up the window function immediately - don't wait for map to be ready
   useEffect(() => {
-    if (!mapRef.current) return;
-
     // Store the handler so it can be called from parent
     (window as any).__highlightTract = handleHighlight;
     
