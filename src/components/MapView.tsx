@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
 import { Plus, Minus, Camera, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -287,44 +287,61 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
   }, [variables, selectedTracts, displayGeoJsonData]);
 
   // Handle tract highlighting from external triggers (e.g., ResultsPanel)
+  const handleHighlight = useCallback((tractId: string) => {
+    if (!tractId || !mapRef.current) {
+      console.warn('Invalid tractId or map not initialized');
+      return;
+    }
+
+    // Try to find the layer - check both exact match and string conversion
+    let layer = layerRef.current.get(tractId);
+    
+    // If not found, try to find by string conversion
+    if (!layer) {
+      for (const [key, value] of layerRef.current.entries()) {
+        if (String(key) === String(tractId)) {
+          layer = value;
+          break;
+        }
+      }
+    }
+
+    if (!layer) {
+      console.warn(`Tract ${tractId} not found on map. Available tracts:`, Array.from(layerRef.current.keys()));
+      return;
+    }
+
+    // Get the bounds of the feature
+    const bounds = (layer as any).getBounds?.();
+    if (bounds && mapRef.current) {
+      // Zoom to the tract with some padding
+      mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+    }
+
+    // Flash highlight effect
+    const originalStyle = {
+      fillColor: (layer as any).options.fillColor || '#fff9c4',
+      weight: (layer as any).options.weight || 2.5,
+      color: (layer as any).options.color || '#fdd835',
+      fillOpacity: (layer as any).options.fillOpacity || 0.6,
+    };
+
+    // Highlight with bright orange/red
+    (layer as L.Path).setStyle({
+      fillColor: '#ff6b6b',
+      weight: 4,
+      color: '#ff3333',
+      fillOpacity: 0.9,
+    });
+
+    // Restore original style after 2 seconds
+    setTimeout(() => {
+      (layer as L.Path).setStyle(originalStyle);
+    }, 2000);
+  }, []);
+
   useEffect(() => {
     if (!mapRef.current) return;
-
-    const handleHighlight = (tractId: string) => {
-      const layer = layerRef.current.get(tractId);
-      if (!layer) {
-        console.warn(`Tract ${tractId} not found on map`);
-        return;
-      }
-
-      // Get the bounds of the feature
-      const bounds = (layer as any).getBounds?.();
-      if (bounds && mapRef.current) {
-        // Zoom to the tract with some padding
-        mapRef.current.fitBounds(bounds, { padding: [50, 50] });
-      }
-
-      // Flash highlight effect
-      const originalStyle = {
-        fillColor: (layer as any).options.fillColor || '#fff9c4',
-        weight: (layer as any).options.weight || 2.5,
-        color: (layer as any).options.color || '#fdd835',
-        fillOpacity: (layer as any).options.fillOpacity || 0.6,
-      };
-
-      // Highlight with bright orange/red
-      (layer as L.Path).setStyle({
-        fillColor: '#ff6b6b',
-        weight: 4,
-        color: '#ff3333',
-        fillOpacity: 0.9,
-      });
-
-      // Restore original style after 2 seconds
-      setTimeout(() => {
-        (layer as L.Path).setStyle(originalStyle);
-      }, 2000);
-    };
 
     // Store the handler so it can be called from parent
     (window as any).__highlightTract = handleHighlight;
@@ -332,7 +349,7 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
     return () => {
       delete (window as any).__highlightTract;
     };
-  }, []);
+  }, [handleHighlight]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const popupContent = formatPopupContent(feature.properties);

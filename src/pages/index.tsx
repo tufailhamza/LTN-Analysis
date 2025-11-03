@@ -94,8 +94,15 @@ const Index = () => {
 
   const handleTractHighlight = (tractId: string) => {
     // Trigger highlight on the map
+    if (!tractId) {
+      console.warn('handleTractHighlight called with invalid tractId');
+      return;
+    }
+    
     if ((window as any).__highlightTract) {
       (window as any).__highlightTract(tractId);
+    } else {
+      console.warn('__highlightTract function not available on window');
     }
   };
 

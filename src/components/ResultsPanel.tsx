@@ -225,15 +225,21 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
                       onClick={() => onTractHighlight(geoid)}
                     >
                       <TableCell className="font-medium">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onTractHighlight(geoid);
-                          }}
-                          className="text-primary hover:text-primary/80 hover:underline font-medium"
-                        >
-                          {name}
-                        </button>
+                        {geoid ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('Tract ID clicked:', geoid);
+                              onTractHighlight(geoid);
+                            }}
+                            className="text-primary hover:text-primary/80 hover:underline font-medium cursor-pointer"
+                            title={`Click to zoom to ${name} on map`}
+                          >
+                            {geoid}
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">N/A</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {tractData.carfree !== undefined ? `${parseFloat(String(tractData.carfree)).toFixed(1)}%` : 'N/A'}
