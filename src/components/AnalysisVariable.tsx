@@ -15,7 +15,6 @@ interface AnalysisVariableProps {
   min?: number;
   max?: number;
 }
-
 const AnalysisVariable = ({
   name,
   value,
