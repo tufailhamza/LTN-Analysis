@@ -61,9 +61,23 @@ export function useCensusData(): UseCensusDataReturn {
           
           if (matchingData) {
             // Merge census data into GeoJSON properties
+            // Preserve GeoJSON-specific fields (greenspace, ntaCodes, etc.) that come from spatial calculations
+            const geoJsonFields = {
+              greenspace: feature.properties.greenspace,
+              greenspacePercent: feature.properties.greenspacePercent,
+              overlappingNTAs: feature.properties.overlappingNTAs,
+              ntaCodes: feature.properties.ntaCodes,
+              ntaname: feature.properties.ntaname,
+              cdtaname: feature.properties.cdtaname,
+            };
+            
             feature.properties = {
               ...feature.properties,
               ...matchingData,
+              // Explicitly preserve GeoJSON-calculated fields (they may be undefined in census data)
+              ...Object.fromEntries(
+                Object.entries(geoJsonFields).filter(([_, value]) => value !== undefined)
+              ),
             };
           }
           

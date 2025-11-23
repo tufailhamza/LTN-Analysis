@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { CollisionRecord } from '@/services/collisionApi';
+import { countCollisionsInTract } from '@/utils/collisionUtils';
 
 interface Variable {
   id: string;
@@ -22,6 +24,8 @@ interface ResultsPanelProps {
   selectedTracts: any[];
   onTractRemove: (tractId: string) => void;
   onTractHighlight: (tractId: string) => void;
+  collisions?: CollisionRecord[];
+  geoJsonData?: any; // GeoJSON data to get tract geometries
 }
 
 // Mock data for census tracts
@@ -33,10 +37,37 @@ const mockCensusTracts = [
   { id: '36061000500', name: 'Staten Island - Tract 5', crashes: 34, carfree: 25, vulnerable: 22, income: 72000, transit: 48 },
 ];
 
-type SortColumn = 'name' | 'carfree' | 'income' | 'transit' | 'vulnerable';
+type SortColumn = 'name' | 'carfree' | 'income' | 'transit' | 'vulnerable' | 'collisions';
 type SortDirection = 'asc' | 'desc' | null;
 
-const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlight }: ResultsPanelProps) => {
+const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlight, collisions = [], geoJsonData }: ResultsPanelProps) => {
+  // Helper function to get tract with geometry
+  const getTractWithGeometry = (tract: any) => {
+    // If tract already has geometry, return it
+    if (tract.geometry) {
+      return tract;
+    }
+    
+    // Otherwise, try to find geometry from geoJsonData
+    const tractData = tract.properties || tract;
+    const geoid = tractData.GEOID || tract.GEOID;
+    
+    if (geoid && geoJsonData?.features) {
+      const feature = geoJsonData.features.find((f: any) => {
+        const fGeoid = f.properties?.GEOID || f.properties?.geoid;
+        return fGeoid === geoid;
+      });
+      
+      if (feature && feature.geometry) {
+        return {
+          ...tract,
+          geometry: feature.geometry,
+        };
+      }
+    }
+    
+    return tract;
+  };
   const [isExpanded, setIsExpanded] = useState(false);
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
@@ -86,6 +117,15 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
         case 'vulnerable':
           aValue = aData.vulnerable !== undefined ? Number(aData.vulnerable) : -Infinity;
           bValue = bData.vulnerable !== undefined ? Number(bData.vulnerable) : -Infinity;
+          break;
+        case 'collisions':
+          // Count collisions in each tract
+          const aTractWithGeo = getTractWithGeometry(a);
+          const bTractWithGeo = getTractWithGeometry(b);
+          const aCollisions = countCollisionsInTract(aTractWithGeo, collisions);
+          const bCollisions = countCollisionsInTract(bTractWithGeo, collisions);
+          aValue = aCollisions.total;
+          bValue = bCollisions.total;
           break;
         default:
           return 0;
@@ -208,6 +248,16 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
                       {getSortIcon('vulnerable')}
                     </Button>
                   </TableHead>
+                  <TableHead className="font-semibold text-right">
+                    <Button
+                      variant="ghost"
+                      onClick={() => handleSort('collisions')}
+                      className="h-auto p-0 font-semibold hover:bg-transparent flex items-center gap-1 ml-auto"
+                    >
+                      Vehicle Collisions
+                      {getSortIcon('collisions')}
+                    </Button>
+                  </TableHead>
                   <TableHead className="font-semibold text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -226,17 +276,24 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
                     >
                       <TableCell className="font-medium">
                         {geoid ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              console.log('Tract ID clicked:', geoid);
-                              onTractHighlight(geoid);
-                            }}
-                            className="text-primary hover:text-primary/80 hover:underline font-medium cursor-pointer"
-                            title={`Click to zoom to ${name} on map`}
-                          >
-                            {geoid}
-                          </button>
+                          <div className="flex flex-col gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                console.log('Tract ID clicked:', geoid);
+                                onTractHighlight(geoid);
+                              }}
+                              className="text-primary hover:text-primary/80 hover:underline font-medium cursor-pointer text-left"
+                              title={`Click to zoom to ${name} on map`}
+                            >
+                              {geoid}
+                            </button>
+                            {tractData.ntaCodes || tractData.overlappingNTAs ? (
+                              <span className="text-xs text-muted-foreground">
+                                NTA: {tractData.ntaCodes || (Array.isArray(tractData.overlappingNTAs) ? tractData.overlappingNTAs.join(', ') : 'N/A')}
+                              </span>
+                            ) : null}
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">N/A</span>
                         )}
@@ -252,6 +309,26 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
                       </TableCell>
                       <TableCell className="text-right">
                         {tractData.vulnerable !== undefined ? `${parseFloat(String(tractData.vulnerable)).toFixed(1)}%` : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {(() => {
+                          const tractWithGeo = getTractWithGeometry(tract);
+                          const collisionStats = countCollisionsInTract(tractWithGeo, collisions);
+                          if (collisionStats.total === 0) {
+                            return <span className="text-muted-foreground">0</span>;
+                          }
+                          return (
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className="font-medium">{collisionStats.total}</span>
+                              <span className={`text-xs ${collisionStats.injuries > 0 ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                                {collisionStats.injuries} injuries
+                              </span>
+                              <span className={`text-xs font-semibold ${collisionStats.fatalities > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                                {collisionStats.fatalities} fatalities
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-center">
                         <button
@@ -272,6 +349,7 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
           )}
         </div>
       )}
+      
     </div>
   );
 };

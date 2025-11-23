@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, CircleMarker, Popup } from 'react-leaflet';
 import { Plus, Minus, Camera, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCensusData } from '@/hooks/useCensusData';
 import { fetchTractData, transformTractData, getCensusApiKey } from '@/services/censusApi';
 import { CENSUS_CONFIG } from '@/config/censusConfig';
+import { CollisionRecord } from '@/services/collisionApi';
+import { useOverlayData } from '@/hooks/useOverlayData';
 import 'leaflet/dist/leaflet.css';
 
 // Fix for default markers in React-Leaflet
@@ -28,11 +30,15 @@ interface MapViewProps {
   onTractSelect: (tract: any) => void;
   onTractHover: (tract: any) => void;
   onTractHighlight?: (tractId: string) => void;
+  collisions?: CollisionRecord[];
+  collisionsLoading?: boolean;
+  overlayType?: string;
 }
 
-const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTractHighlight }: MapViewProps) => {
+const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTractHighlight, collisions = [], collisionsLoading = false, overlayType = 'none' }: MapViewProps) => {
   const mapRef = useRef<L.Map>(null);
   const { geoJsonData, loading, error } = useCensusData();
+  const { overlayData, loading: overlayLoading } = useOverlayData(overlayType);
   const [hoveredTractData, setHoveredTractData] = useState<any>(null);
   const [loadingTract, setLoadingTract] = useState<string | null>(null);
   const layerRef = useRef<Map<string, L.Layer>>(new Map()); // Store layer references by GEOID
@@ -86,23 +92,56 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
             ? Number(tractData.vulnerable) 
             : (tractData.vulnerablePercent !== undefined ? Number(tractData.vulnerablePercent) : undefined);
           break;
+        case 'greenspace':
+          // Percent Greenspace: Percentage of land area dedicated to parks and green spaces
+          // Calculated from spatial intersection of parks GeoJSON with tract boundaries
+          tractValue = tractData.greenspace !== undefined 
+            ? Number(tractData.greenspace) 
+            : (tractData.greenspacePercent !== undefined ? Number(tractData.greenspacePercent) : undefined);
+          // Greenspace can legitimately be 0, so we need to handle it differently
+          // If value is 0, it's a valid value (tract has no parks), not missing data
+          // Debug: Log first few tracts to verify greenspace values exist
+          if (tractValue === undefined && Math.random() < 0.01) {
+            console.log('🔍 Debug: Tract missing greenspace:', {
+              geoid: tractData.GEOID,
+              hasGreenspace: tractData.greenspace !== undefined,
+              hasGreenspacePercent: tractData.greenspacePercent !== undefined,
+              properties: Object.keys(tractData),
+            });
+          }
+          break;
         default:
           return true; // Unknown variable, don't filter
       }
       
-      // If value is missing or is a Census Bureau sentinel value
-      // Sentinel values: -666666666, -999999999 indicate missing/suppressed data
-      if (tractValue === undefined || isNaN(tractValue) || 
-          (typeof tractValue === 'number' && tractValue < 0 && (tractValue <= -666666666 || tractValue <= -999999999))) {
-        // If filter is at its initial/inclusive state (min = 0), allow missing data to match
-        // This means when filters are at default (min = 0), tracts with N/A data still show as yellow
-        // Once filters are adjusted above minimum, missing data will be excluded (grey)
-        // For income: if min is 0, include N/A tracts; if min > 0, exclude them
-        // For percentages: if min is 0, include N/A tracts; if min > 0, exclude them
-        if (min === 0) {
-          return true; // Allow missing data when filter is at minimum (0 = inclusive/default state)
+      // Special handling for greenspace: 0 is a valid value (tract has no parks)
+      if (variable.id === 'greenspace') {
+        // For greenspace, 0 is valid (means no parks in tract)
+        // Only treat as missing if it's undefined or NaN
+        if (tractValue === undefined || isNaN(tractValue)) {
+          // If filter is at its initial/inclusive state (min = 0), allow missing data to match
+          if (min === 0) {
+            return true; // Allow missing data when filter is at minimum
+          }
+          return false; // Exclude missing data when filter has been adjusted above minimum
         }
-        return false; // Exclude missing data when filter has been adjusted above minimum
+        // If value is 0, it's valid - check if it's in range
+        // Continue to range check below
+      } else {
+        // For other variables, check for missing or sentinel values
+        // Sentinel values: -666666666, -999999999 indicate missing/suppressed data
+        if (tractValue === undefined || isNaN(tractValue) || 
+            (typeof tractValue === 'number' && tractValue < 0 && (tractValue <= -666666666 || tractValue <= -999999999))) {
+          // If filter is at its initial/inclusive state (min = 0), allow missing data to match
+          // This means when filters are at default (min = 0), tracts with N/A data still show as yellow
+          // Once filters are adjusted above minimum, missing data will be excluded (grey)
+          // For income: if min is 0, include N/A tracts; if min > 0, exclude them
+          // For percentages: if min is 0, include N/A tracts; if min > 0, exclude them
+          if (min === 0) {
+            return true; // Allow missing data when filter is at minimum (0 = inclusive/default state)
+          }
+          return false; // Exclude missing data when filter has been adjusted above minimum
+        }
       }
       
       // Check if value is within slider range
@@ -151,7 +190,12 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
         const rawData = await fetchTractData(geoid, CENSUS_CONFIG.DEFAULT_YEAR, apiKey);
         if (rawData) {
           const transformed = transformTractData(rawData);
-          setHoveredTractData(transformed);
+          // Merge with original properties to preserve GeoJSON fields like cdtaname, nta2020, etc.
+          const mergedData = {
+            ...feature.properties,
+            ...transformed,
+          };
+          setHoveredTractData(mergedData);
           
           // Update feature properties with fetched data
           Object.assign(feature.properties, transformed);
@@ -237,6 +281,7 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
     return `
       <div class="p-2 min-w-[200px]">
         <h3 class="font-semibold text-sm mb-2">${data.NAME || 'Census Tract'}</h3>
+        ${data.ntaname ? `<div class="text-xs text-gray-600 mb-2 pb-2 border-b border-gray-200">${data.ntaname}</div>` : ''}
         ${isLoading ? `
           <div class="text-xs text-gray-500">Loading data...</div>
         ` : `
@@ -246,6 +291,7 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
             ${data.income ? `<div>Median Income: <span class="font-medium">$${parseInt(data.income).toLocaleString()}</span></div>` : ''}
             ${data.transit !== undefined ? `<div>Transit Access Score: <span class="font-medium">${parseFloat(data.transit).toFixed(1)}%</span></div>` : ''}
             ${data.vulnerable !== undefined ? `<div>Vulnerable Residents: <span class="font-medium">${parseFloat(data.vulnerable).toFixed(1)}%</span></div>` : ''}
+            ${data.greenspace !== undefined ? `<div>Greenspace: <span class="font-medium">${parseFloat(data.greenspace).toFixed(1)}%</span></div>` : ''}
             ${data.totalHousingUnits ? `<div>Housing Units: <span class="font-medium">${parseInt(data.totalHousingUnits).toLocaleString()}</span></div>` : ''}
           </div>
           <p class="text-xs text-gray-500 mt-2">Click to select this tract</p>
@@ -530,6 +576,171 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
               <p className="text-xs text-muted-foreground mt-2">Check console for loading status</p>
             </div>
           </div>
+        )}
+
+        {/* Render collision markers as red dots */}
+        {collisions.map((collision) => {
+          const lat = parseFloat(collision.latitude || '');
+          const lon = parseFloat(collision.longitude || '');
+          
+          // Skip if coordinates are invalid
+          if (isNaN(lat) || isNaN(lon)) {
+            return null;
+          }
+
+          const injured = parseInt(collision.number_of_persons_injured || '0');
+          const killed = parseInt(collision.number_of_persons_killed || '0');
+          const crashDate = collision.crash_date ? new Date(collision.crash_date).toLocaleDateString() : 'Unknown date';
+
+          return (
+            <CircleMarker
+              key={collision.collision_id}
+              center={[lat, lon]}
+              radius={5}
+              pathOptions={{
+                fillColor: '#dc2626', // Red color
+                color: '#991b1b', // Darker red border
+                fillOpacity: 0.8,
+                weight: 1,
+              }}
+            >
+              <Popup>
+                <div className="p-2 min-w-[200px]">
+                  <h3 className="font-semibold text-sm mb-2">Collision #{collision.collision_id}</h3>
+                  <div className="text-xs space-y-1">
+                    <div>Date: <span className="font-medium">{crashDate}</span></div>
+                    {collision.crash_time && (
+                      <div>Time: <span className="font-medium">{collision.crash_time}</span></div>
+                    )}
+                    {injured > 0 && (
+                      <div className="text-orange-600">
+                        Injured: <span className="font-medium">{injured}</span>
+                      </div>
+                    )}
+                    {killed > 0 && (
+                      <div className="text-red-600 font-semibold">
+                        Fatalities: <span className="font-medium">{killed}</span>
+                      </div>
+                    )}
+                    {collision.contributing_factor_vehicle_1 && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <div className="text-xs text-gray-600">
+                          Contributing Factor: {collision.contributing_factor_vehicle_1}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Popup>
+            </CircleMarker>
+          );
+        })}
+
+        {/* Render overlay layers */}
+        {overlayData && overlayData.features && overlayData.features.length > 0 && (
+          <GeoJSON
+            key={`overlay-${overlayType}-${overlayData.features.length}`}
+            data={overlayData as any}
+            style={(feature) => {
+              // Style based on overlay type
+              switch (overlayType) {
+                case 'bikeLanes':
+                  return {
+                    color: '#0066cc',
+                    weight: 3,
+                    opacity: 0.8,
+                    dashArray: '5, 5',
+                  };
+                case 'parkSpace':
+                  return {
+                    fillColor: '#228B22',
+                    color: '#006400',
+                    weight: 2,
+                    fillOpacity: 0.3,
+                    opacity: 0.7,
+                  };
+                case 'greenstreets':
+                  return {
+                    fillColor: '#90EE90',
+                    color: '#32CD32',
+                    weight: 2,
+                    fillOpacity: 0.4,
+                    opacity: 0.8,
+                  };
+                case 'mtaBusLanes':
+                  return {
+                    color: '#FF6600',
+                    weight: 4,
+                    opacity: 0.9,
+                    dashArray: '10, 5',
+                  };
+                default:
+                  return {
+                    color: '#666',
+                    weight: 2,
+                    opacity: 0.5,
+                  };
+              }
+            }}
+            onEachFeature={(feature, layer) => {
+              // Add popup with feature information
+              const props = feature.properties || {};
+              let popupContent = '';
+
+              switch (overlayType) {
+                case 'bikeLanes':
+                  popupContent = `
+                    <div class="p-2 min-w-[200px]">
+                      <h3 class="font-semibold text-sm mb-2">Bike Lane</h3>
+                      <div class="text-xs space-y-1">
+                        ${props.street ? `<div><strong>Street:</strong> ${props.street}</div>` : ''}
+                        ${props.facilitycl ? `<div><strong>Facility Class:</strong> ${props.facilitycl}</div>` : ''}
+                        ${props.ft_facilit ? `<div><strong>Facility Type:</strong> ${props.ft_facilit}</div>` : ''}
+                      </div>
+                    </div>
+                  `;
+                  break;
+                case 'parkSpace':
+                  popupContent = `
+                    <div class="p-2 min-w-[200px]">
+                      <h3 class="font-semibold text-sm mb-2">${props.name311 || props.signname || 'DPR Park'}</h3>
+                      <div class="text-xs space-y-1">
+                        ${props.typecategory ? `<div><strong>Type:</strong> ${props.typecategory}</div>` : ''}
+                        ${props.acres ? `<div><strong>Acres:</strong> ${props.acres}</div>` : ''}
+                        ${props.location ? `<div><strong>Location:</strong> ${props.location}</div>` : ''}
+                      </div>
+                    </div>
+                  `;
+                  break;
+                case 'greenstreets':
+                  popupContent = `
+                    <div class="p-2 min-w-[200px]">
+                      <h3 class="font-semibold text-sm mb-2">${props.name311 || props.signname || 'Greenstreet'}</h3>
+                      <div class="text-xs space-y-1">
+                        ${props.location ? `<div><strong>Location:</strong> ${props.location}</div>` : ''}
+                        ${props.acres ? `<div><strong>Acres:</strong> ${props.acres}</div>` : ''}
+                      </div>
+                    </div>
+                  `;
+                  break;
+                case 'mtaBusLanes':
+                  popupContent = `
+                    <div class="p-2 min-w-[200px]">
+                      <h3 class="font-semibold text-sm mb-2">Bus Lane</h3>
+                      <div class="text-xs space-y-1">
+                        ${props.street ? `<div><strong>Street:</strong> ${props.street}</div>` : ''}
+                        <div class="text-orange-600">MTA Bus Lane Route</div>
+                      </div>
+                    </div>
+                  `;
+                  break;
+              }
+
+              if (popupContent) {
+                layer.bindPopup(popupContent);
+              }
+            }}
+          />
         )}
       </MapContainer>
       

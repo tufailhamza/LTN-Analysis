@@ -9,6 +9,8 @@
  * For now, we'll provide a service structure that can be extended
  */
 
+import { feature, intersect, area, booleanIntersects, bbox } from '@turf/turf';
+
 export interface GeoJSONFeature {
   type: 'Feature';
   properties: {
@@ -229,7 +231,13 @@ export async function fetchNYCTractsGeoJSON(): Promise<GeoJSONData | null> {
           console.log(`   ${countyNames[code] || code}: ${count} tracts`);
         });
         
-        return data;
+        // Enhance with NTA data
+        let enhancedData = await enhanceTractsWithNTAs(data);
+        
+        // Enhance with greenspace data
+        enhancedData = await enhanceTractsWithGreenspace(enhancedData);
+        
+        return enhancedData;
       } else {
         throw new Error('Local GeoJSON file returned no features');
       }
@@ -414,6 +422,302 @@ export function generateMockGeoJSON(tractData: any[]): GeoJSONData {
   return {
     type: 'FeatureCollection',
     features,
+  };
+}
+
+/**
+ * Fetch NYC Neighborhood Tabulation Areas (NTA) GeoJSON data
+ */
+export async function fetchNYCNTAsGeoJSON(): Promise<GeoJSONData | null> {
+  try {
+    const ntaGeoJsonPath = '/2020_Neighborhood_Tabulation_Areas_(NTAs)_20251122.geojson';
+    
+    console.log('Loading NTA boundaries from local GeoJSON file...');
+    
+    try {
+      const response = await fetch(ntaGeoJsonPath);
+      
+      if (!response.ok) {
+        throw new Error(`Local NTA GeoJSON file returned ${response.status}: ${response.statusText}`);
+      }
+      
+      const data: GeoJSONData = await response.json();
+      
+      if (data.features && data.features.length > 0) {
+        console.log(`✅ Successfully loaded ${data.features.length} NTA boundaries`);
+        return data;
+      } else {
+        throw new Error('Local NTA GeoJSON file returned no features');
+      }
+    } catch (fetchError) {
+      console.error('❌ Failed to load NTA GeoJSON file:', fetchError);
+      return null;
+    }
+  } catch (error) {
+    console.error('❌ Error fetching NTA GeoJSON:', error);
+    return null;
+  }
+}
+
+/**
+ * Find overlapping NTAs for a given tract
+ * Returns array of NTA codes (nta2020) that overlap with the tract
+ */
+export function findOverlappingNTAs(
+  tractFeature: GeoJSONFeature,
+  ntaData: GeoJSONData
+): string[] {
+  if (!tractFeature.geometry || !ntaData || !ntaData.features) {
+    return [];
+  }
+
+  const overlappingNTAs: string[] = [];
+  const tractGeometry = tractFeature.geometry;
+
+  try {
+    // Convert tract geometry to Turf.js format
+    const tractTurf = feature({
+      type: tractGeometry.type,
+      coordinates: tractGeometry.coordinates,
+    });
+
+    // Check each NTA for intersection
+    for (const ntaFeature of ntaData.features) {
+      if (!ntaFeature.geometry || !ntaFeature.properties) {
+        continue;
+      }
+
+      try {
+        const ntaTurf = feature({
+          type: ntaFeature.geometry.type,
+          coordinates: ntaFeature.geometry.coordinates,
+        });
+
+        // Check if geometries intersect
+        const intersection = intersect(tractTurf, ntaTurf);
+        
+        if (intersection) {
+          // Calculate intersection area to ensure meaningful overlap
+          const intersectionArea = area(intersection);
+          const tractArea = area(tractTurf);
+          
+          // Include if intersection is at least 1% of tract area
+          // This handles edge cases where tiny overlaps occur
+          if (intersectionArea > 0 && (intersectionArea / tractArea) > 0.01) {
+            const ntaCode = ntaFeature.properties.nta2020 || ntaFeature.properties.NTA2020;
+            if (ntaCode && !overlappingNTAs.includes(ntaCode)) {
+              overlappingNTAs.push(ntaCode);
+            }
+          }
+        }
+      } catch (error) {
+        // Skip this NTA if there's an error (invalid geometry, etc.)
+        continue;
+      }
+    }
+  } catch (error) {
+    console.warn('Error finding overlapping NTAs:', error);
+  }
+
+  return overlappingNTAs;
+}
+
+/**
+ * Enhance tract GeoJSON with overlapping NTA information
+ */
+export async function enhanceTractsWithNTAs(tractsData: GeoJSONData): Promise<GeoJSONData> {
+  const ntaData = await fetchNYCNTAsGeoJSON();
+  
+  if (!ntaData || !ntaData.features || ntaData.features.length === 0) {
+    console.warn('⚠️ No NTA data available, skipping NTA enhancement');
+    return tractsData;
+  }
+
+  console.log('🔗 Finding overlapping NTAs for each tract...');
+  
+  let processedCount = 0;
+  const enhancedFeatures = tractsData.features.map((tractFeature) => {
+    const overlappingNTAs = findOverlappingNTAs(tractFeature, ntaData);
+    
+    if (overlappingNTAs.length > 0) {
+      processedCount++;
+    }
+
+    // Add NTA information to tract properties
+    return {
+      ...tractFeature,
+      properties: {
+        ...tractFeature.properties,
+        overlappingNTAs: overlappingNTAs,
+        ntaCodes: overlappingNTAs.join(', '), // For display purposes
+      },
+    };
+  });
+
+  console.log(`✅ Enhanced ${processedCount} tracts with NTA information`);
+
+  return {
+    ...tractsData,
+    features: enhancedFeatures,
+  };
+}
+
+/**
+ * Fetch NYC Parks GeoJSON data
+ */
+export async function fetchNYCParksGeoJSON(): Promise<GeoJSONData | null> {
+  try {
+    const parksGeoJsonPath = '/Parks_Properties_20251123.geojson';
+    
+    console.log('Loading parks boundaries from local GeoJSON file...');
+    
+    try {
+      const response = await fetch(parksGeoJsonPath);
+      
+      if (!response.ok) {
+        throw new Error(`Local Parks GeoJSON file returned ${response.status}: ${response.statusText}`);
+      }
+      
+      const data: GeoJSONData = await response.json();
+      
+      if (data.features && data.features.length > 0) {
+        // Validate and fix park coordinates - same as tracts
+        const nycBounds = {
+          minLon: -74.5,
+          maxLon: -73.5,
+          minLat: 40.4,
+          maxLat: 41.0,
+        };
+
+        // Validate and fix park geometries
+        data.features = data.features
+          .map((feature) => {
+            // Validate and fix geometry coordinates if geometry exists
+            if (feature.geometry) {
+              feature.geometry = validateAndFixGeometry(feature.geometry, nycBounds);
+            }
+            return feature;
+          })
+          .filter((feature) => {
+            // Only keep features with valid geometry
+            return feature.geometry && 
+                   feature.geometry.coordinates && 
+                   feature.geometry.coordinates.length > 0;
+          });
+        
+        console.log(`✅ Successfully loaded ${data.features.length} park boundaries`);
+        
+        // Sample a park to verify coordinates
+        if (data.features.length > 0) {
+          const samplePark = data.features[0];
+          if (samplePark.geometry && samplePark.geometry.coordinates) {
+            const sampleCoords = samplePark.geometry.type === 'Polygon' 
+              ? (samplePark.geometry.coordinates as number[][][])[0][0]
+              : (samplePark.geometry.coordinates as number[][][][])[0][0][0];
+            
+            if (sampleCoords && sampleCoords.length >= 2) {
+              console.log(`📍 Sample park coordinates [lon, lat]: [${sampleCoords[0]}, ${sampleCoords[1]}]`);
+            }
+          }
+        }
+        
+        return data;
+      } else {
+        throw new Error('Local Parks GeoJSON file returned no features');
+      }
+    } catch (fetchError) {
+      console.error('❌ Failed to load Parks GeoJSON file:', fetchError);
+      return null;
+    }
+  } catch (error) {
+    console.error('❌ Error fetching Parks GeoJSON:', error);
+    return null;
+  }
+}
+
+/**
+ * NOTE: Greenspace calculation is now done via Python script (scripts/calculate_greenspace.py)
+ * and loaded from greenspace_percentages.json. No browser-side computation is performed.
+ * 
+ * The calculateGreenspacePercentage function has been removed to ensure all calculations
+ * are pre-computed for better performance.
+ */
+
+/**
+ * Load pre-computed greenspace percentages from JSON file
+ * All greenspace calculations are done in Python - no browser computation needed.
+ */
+async function loadGreenspaceData(): Promise<Record<string, number>> {
+  try {
+    const response = await fetch('/greenspace_percentages.json');
+    if (!response.ok) {
+      throw new Error(`Failed to load greenspace data: ${response.status} ${response.statusText}`);
+    }
+    const data: Record<string, number> = await response.json();
+    console.log(`✅ Loaded pre-computed greenspace data for ${Object.keys(data).length} tracts`);
+    return data;
+  } catch (error) {
+    console.error('❌ Could not load pre-computed greenspace data:', error);
+    console.error('💡 Make sure to run: python scripts/calculate_greenspace.py');
+    throw error;
+  }
+}
+
+/**
+ * Enhance tract GeoJSON with greenspace percentage information
+ * 
+ * Uses pre-computed data from greenspace_percentages.json (calculated via Python).
+ * No computation is done in the browser - all data is pre-calculated.
+ */
+export async function enhanceTractsWithGreenspace(tractsData: GeoJSONData): Promise<GeoJSONData> {
+  console.log('🌳 Loading pre-computed greenspace data...');
+  
+  // Load pre-computed greenspace data (calculated via Python script)
+  const greenspaceData = await loadGreenspaceData();
+  
+  console.log('📊 Integrating greenspace percentages into tract data...');
+  
+  let processedCount = 0;
+  let totalGreenspace = 0;
+  let maxGreenspace = 0;
+  let minGreenspace = Infinity;
+  
+  const enhancedFeatures = tractsData.features.map((tractFeature) => {
+    const geoid = tractFeature.properties?.GEOID || tractFeature.properties?.geoid;
+    const greenspacePercent = geoid ? (greenspaceData[geoid] ?? 0) : 0;
+    
+    // Track tracts with parks (greenspace > 0)
+    if (greenspacePercent > 0) {
+      processedCount++;
+    }
+    
+    // Track statistics
+    totalGreenspace += greenspacePercent;
+    if (greenspacePercent > maxGreenspace) {
+      maxGreenspace = greenspacePercent;
+    }
+    if (greenspacePercent < minGreenspace) {
+      minGreenspace = greenspacePercent;
+    }
+
+    // Add greenspace information to tract properties
+    return {
+      ...tractFeature,
+      properties: {
+        ...tractFeature.properties,
+        greenspace: greenspacePercent,
+        greenspacePercent: greenspacePercent, // Alias for consistency
+      },
+    };
+  });
+
+  const avgGreenspace = totalGreenspace / tractsData.features.length;
+  console.log(`✅ Enhanced ${tractsData.features.length} tracts with greenspace data`);
+  console.log(`   📊 Greenspace stats: Min=${minGreenspace === Infinity ? 0 : minGreenspace.toFixed(2)}%, Max=${maxGreenspace.toFixed(2)}%, Avg=${avgGreenspace.toFixed(2)}%, Tracts with parks=${processedCount}`);
+  
+  return {
+    ...tractsData,
+    features: enhancedFeatures,
   };
 }
 

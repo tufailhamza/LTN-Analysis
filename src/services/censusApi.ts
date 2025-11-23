@@ -129,16 +129,41 @@ export async function fetchNYCTractsData(
     for (const countyCode of countyCodes) {
       const url = buildCensusApiUrl(year, getAllVariableCodes(), CENSUS_CONFIG.STATE_FIPS, countyCode, undefined, apiKey);
       
-      const response = await fetch(url);
+      console.log(`Fetching census data for county ${countyCode}...`);
+      console.log(`URL: ${url.substring(0, 200)}...`); // Log first 200 chars to avoid huge logs
       
-      if (!response.ok) {
-        console.warn(`Failed to fetch data for county ${countyCode}:`, response.statusText);
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => response.statusText);
+          console.warn(`Failed to fetch data for county ${countyCode}:`, response.status, errorText);
+          continue;
+        }
+
+        const data: string[][] = await response.json();
+        const parsed = parseCensusResponse(data);
+        allTracts.push(...parsed);
+        console.log(`✅ Successfully fetched ${parsed.length} tracts for county ${countyCode}`);
+      } catch (fetchError: any) {
+        console.error(`❌ Error fetching county ${countyCode}:`, fetchError);
+        console.error(`Error details:`, {
+          message: fetchError?.message,
+          name: fetchError?.name,
+          stack: fetchError?.stack,
+        });
+        // Continue to next county instead of failing completely
         continue;
       }
+    }
 
-      const data: string[][] = await response.json();
-      const parsed = parseCensusResponse(data);
-      allTracts.push(...parsed);
+    if (allTracts.length === 0) {
+      throw new Error('No census data was successfully fetched for any NYC county. Check network connection and API key.');
     }
 
     // Cache the results
@@ -176,23 +201,38 @@ export async function fetchTractData(
 
     const url = buildCensusApiUrl(year, getAllVariableCodes(), state, county, tract, apiKey);
     
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      console.warn(`Failed to fetch data for tract ${geoid}:`, response.statusText);
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        console.warn(`Failed to fetch data for tract ${geoid}:`, response.status, errorText);
+        return null;
+      }
+
+      const data: string[][] = await response.json();
+      const parsed = parseCensusResponse(data);
+
+      if (parsed.length > 0) {
+        // Cache the result
+        apiCache.set(cacheKey, parsed, 30 * 60 * 1000); // 30 minutes for individual tracts
+        return parsed[0];
+      }
+
+      return null;
+    } catch (fetchError: any) {
+      console.error(`❌ Error fetching tract ${geoid}:`, fetchError);
+      console.error(`Error details:`, {
+        message: fetchError?.message,
+        name: fetchError?.name,
+      });
       return null;
     }
-
-    const data: string[][] = await response.json();
-    const parsed = parseCensusResponse(data);
-
-    if (parsed.length > 0) {
-      // Cache the result
-      apiCache.set(cacheKey, parsed, 30 * 60 * 1000); // 30 minutes for individual tracts
-      return parsed[0];
-    }
-
-    return null;
   } catch (error) {
     console.error(`Error fetching tract ${geoid} data:`, error);
     return null;
