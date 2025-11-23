@@ -162,14 +162,14 @@ const Index = () => {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-96 border-r border-border bg-card overflow-y-auto relative z-10 flex flex-col h-full">
+        <aside className="w-96 border-r border-border bg-card relative z-10 flex flex-col h-full">
           <div className="p-6 border-b border-border flex-shrink-0">
             <p className="text-sm text-muted-foreground">
               Use the filters in the left panel to identify which New York City neighborhoods could benefit the most from low traffic solutions based on key community and mobility indicators.
             </p>
           </div>
           
-          <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="flex-1 overflow-y-auto min-h-0 pb-8 sidebar-scroll">
 
         <SidebarSection title="Analysis Variables" defaultOpen={true}>
           {variables.map((variable) => (
@@ -311,7 +311,7 @@ const Index = () => {
         </SidebarSection>
 
         <SidebarSection title="Additional Overlays" defaultOpen={false}>
-          <div className="space-y-3">
+          <div className="space-y-3 pb-2">
             <RadioGroup value={overlayType} onValueChange={setOverlayType}>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="none" id="none" />

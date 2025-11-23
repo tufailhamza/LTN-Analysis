@@ -15,7 +15,7 @@ const SidebarSection = ({ title, children, defaultOpen = true }: SidebarSectionP
     <div className="border-b border-border last:border-b-0">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors flex-shrink-0"
       >
         <h2 className="text-lg font-bold text-foreground">{title}</h2>
         {isOpen ? (
@@ -31,7 +31,7 @@ const SidebarSection = ({ title, children, defaultOpen = true }: SidebarSectionP
             isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'
           )}
         >
-          <div className="p-6 pt-0 space-y-4">
+          <div className="p-6 pt-0 space-y-4 pb-6">
           {children}
         </div>
       </div>
