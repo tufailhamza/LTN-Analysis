@@ -246,12 +246,12 @@ const Index = () => {
               <Label className="text-sm font-medium">Collision Type</Label>
               <RadioGroup value={collisionType} onValueChange={setCollisionType}>
                 <div className="flex items-center justify-between space-x-2">
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="all" id="all" />
-                    <Label htmlFor="all" className="font-normal cursor-pointer">
-                      Show all Collisions
-                    </Label>
-                  </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="all" id="all" />
+                  <Label htmlFor="all" className="font-normal cursor-pointer">
+                    Show all Collisions
+                  </Label>
+                </div>
                   {dateFrom && dateTo && collisionCounts && (
                     <span className="text-xs text-muted-foreground font-medium">
                       {collisionCounts.all.toLocaleString()} collisions
@@ -259,11 +259,11 @@ const Index = () => {
                   )}
                 </div>
                 <div className="flex items-center justify-between space-x-2">
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="injuries" id="injuries" />
-                    <Label htmlFor="injuries" className="font-normal cursor-pointer">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="injuries" id="injuries" />
+                  <Label htmlFor="injuries" className="font-normal cursor-pointer">
                       Show Only Collisions with Injuries
-                    </Label>
+                  </Label>
                   </div>
                   {dateFrom && dateTo && collisionCounts && (
                     <span className="text-xs text-orange-600 font-medium">
@@ -272,11 +272,11 @@ const Index = () => {
                   )}
                 </div>
                 <div className="flex items-center justify-between space-x-2">
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="fatalities" id="fatalities" />
-                    <Label htmlFor="fatalities" className="font-normal cursor-pointer">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="fatalities" id="fatalities" />
+                  <Label htmlFor="fatalities" className="font-normal cursor-pointer">
                       Show Only Collisions with Fatalities
-                    </Label>
+                  </Label>
                   </div>
                   {dateFrom && dateTo && collisionCounts && (
                     <span className="text-xs text-red-600 font-medium">
@@ -348,7 +348,7 @@ const Index = () => {
         </SidebarSection>
 
           </div>
-        </aside>
+      </aside>
       
 
         {/* Map View */}

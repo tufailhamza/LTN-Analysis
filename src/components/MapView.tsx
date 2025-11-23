@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, GeoJSON, CircleMarker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
 import { Plus, Minus, Camera, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCensusData } from '@/hooks/useCensusData';
@@ -7,6 +7,7 @@ import { fetchTractData, transformTractData, getCensusApiKey } from '@/services/
 import { CENSUS_CONFIG } from '@/config/censusConfig';
 import { CollisionRecord } from '@/services/collisionApi';
 import { useOverlayData } from '@/hooks/useOverlayData';
+import { CollisionMarkers, MapEvents } from '@/components/CollisionMarkers';
 import 'leaflet/dist/leaflet.css';
 
 // Fix for default markers in React-Leaflet
@@ -41,6 +42,8 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
   const { overlayData, loading: overlayLoading } = useOverlayData(overlayType);
   const [hoveredTractData, setHoveredTractData] = useState<any>(null);
   const [loadingTract, setLoadingTract] = useState<string | null>(null);
+  const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<number>(10);
   const layerRef = useRef<Map<string, L.Layer>>(new Map()); // Store layer references by GEOID
 
   // Filter tracts based on variable sliders - MUST be defined before useMemo
@@ -552,10 +555,22 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
         zoom={10}
         className="h-full w-full"
         ref={mapRef}
+        whenReady={() => {
+          if (mapRef.current) {
+            setMapBounds(mapRef.current.getBounds());
+            setZoomLevel(mapRef.current.getZoom());
+          }
+        }}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        
+        {/* Track map events for viewport-based filtering */}
+        <MapEvents 
+          onBoundsChange={(bounds) => setMapBounds(bounds)}
+          onZoomChange={(zoom) => setZoomLevel(zoom)}
         />
         
         {displayGeoJsonData && displayGeoJsonData.features && displayGeoJsonData.features.length > 0 ? (
@@ -578,63 +593,12 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
           </div>
         )}
 
-        {/* Render collision markers as red dots */}
-        {collisions.map((collision) => {
-          const lat = parseFloat(collision.latitude || '');
-          const lon = parseFloat(collision.longitude || '');
-          
-          // Skip if coordinates are invalid
-          if (isNaN(lat) || isNaN(lon)) {
-            return null;
-          }
-
-          const injured = parseInt(collision.number_of_persons_injured || '0');
-          const killed = parseInt(collision.number_of_persons_killed || '0');
-          const crashDate = collision.crash_date ? new Date(collision.crash_date).toLocaleDateString() : 'Unknown date';
-
-          return (
-            <CircleMarker
-              key={collision.collision_id}
-              center={[lat, lon]}
-              radius={5}
-              pathOptions={{
-                fillColor: '#dc2626', // Red color
-                color: '#991b1b', // Darker red border
-                fillOpacity: 0.8,
-                weight: 1,
-              }}
-            >
-              <Popup>
-                <div className="p-2 min-w-[200px]">
-                  <h3 className="font-semibold text-sm mb-2">Collision #{collision.collision_id}</h3>
-                  <div className="text-xs space-y-1">
-                    <div>Date: <span className="font-medium">{crashDate}</span></div>
-                    {collision.crash_time && (
-                      <div>Time: <span className="font-medium">{collision.crash_time}</span></div>
-                    )}
-                    {injured > 0 && (
-                      <div className="text-orange-600">
-                        Injured: <span className="font-medium">{injured}</span>
-                      </div>
-                    )}
-                    {killed > 0 && (
-                      <div className="text-red-600 font-semibold">
-                        Fatalities: <span className="font-medium">{killed}</span>
-                      </div>
-                    )}
-                    {collision.contributing_factor_vehicle_1 && (
-                      <div className="mt-2 pt-2 border-t border-gray-200">
-                        <div className="text-xs text-gray-600">
-                          Contributing Factor: {collision.contributing_factor_vehicle_1}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Popup>
-            </CircleMarker>
-          );
-        })}
+        {/* Render collision markers as red dots - Optimized */}
+        <CollisionMarkers 
+          collisions={collisions} 
+          mapBounds={mapBounds}
+          zoomLevel={zoomLevel}
+        />
 
         {/* Render overlay layers */}
         {overlayData && overlayData.features && overlayData.features.length > 0 && (
@@ -776,6 +740,16 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
       <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur-sm p-3 rounded-lg text-xs text-foreground max-w-xs border border-border z-[500]">
         <p className="font-semibold mb-1">🗺️ Interactive Census Map</p>
         <p>Hover over tracts to see data • Click to select</p>
+        {collisions.length > 0 && zoomLevel < 11 && (
+          <p className="text-blue-600 dark:text-blue-400 mt-1 text-[10px]">
+            💡 Zoom in (level 11+) to see collision markers
+          </p>
+        )}
+        {collisions.length > 0 && zoomLevel >= 11 && (
+          <p className="text-green-600 dark:text-green-400 mt-1 text-[10px]">
+            ✓ Showing collision markers (optimized)
+          </p>
+        )}
         {!getCensusApiKey() && (
           <p className="text-yellow-600 dark:text-yellow-400 mt-1 text-[10px]">
             ⚠️ API key not set - using mock data

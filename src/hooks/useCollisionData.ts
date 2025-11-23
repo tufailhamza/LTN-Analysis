@@ -60,42 +60,32 @@ export function useCollisionData({
     loadAllCollisions();
   }, [baseQueryParams, enabled, startDate, endDate]);
 
-  // Filter collisions based on selected type
-  useEffect(() => {
-    if (!enabled || !startDate || !endDate) {
-      setCollisions([]);
-      setError(null);
-      return;
+  // Filter collisions based on selected type - Memoized for performance
+  const filteredCollisions = useMemo(() => {
+    if (!enabled || !startDate || !endDate || !allCollisions.length) {
+      return [];
     }
 
-    setLoading(true);
-    setError(null);
+    let filtered = [...allCollisions];
 
-    try {
-      let filtered = [...allCollisions];
-
-      // Apply collision type filters
-      if (collisionType === 'injuries') {
-        filtered = filtered.filter(
-          (c) => parseInt(c.number_of_persons_injured || '0') > 0
-        );
-      } else if (collisionType === 'fatalities') {
-        filtered = filtered.filter(
-          (c) => parseInt(c.number_of_persons_killed || '0') > 0
-        );
-      }
-
-      setCollisions(filtered);
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : 'Failed to filter collision data';
-      setError(errorMessage);
-      console.error('Error filtering collisions:', err);
-      setCollisions([]);
-    } finally {
-      setLoading(false);
+    // Apply collision type filters
+    if (collisionType === 'injuries') {
+      filtered = filtered.filter(
+        (c) => parseInt(c.number_of_persons_injured || '0') > 0
+      );
+    } else if (collisionType === 'fatalities') {
+      filtered = filtered.filter(
+        (c) => parseInt(c.number_of_persons_killed || '0') > 0
+      );
     }
+
+    return filtered;
   }, [allCollisions, collisionType, enabled, startDate, endDate]);
+
+  // Update collisions state only when filtered results change
+  useEffect(() => {
+    setCollisions(filteredCollisions);
+  }, [filteredCollisions]);
 
   // Calculate counts for each category
   const counts = useMemo(() => {
