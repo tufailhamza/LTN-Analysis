@@ -33,18 +33,155 @@ interface MapViewProps {
   onTractHighlight?: (tractId: string) => void;
   collisions?: CollisionRecord[];
   collisionsLoading?: boolean;
-  overlayType?: string;
+  overlayTypes?: string[];
+  sidebarOpen?: boolean; // Track sidebar state to trigger map resize
 }
 
-const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTractHighlight, collisions = [], collisionsLoading = false, overlayType = 'none' }: MapViewProps) => {
+// Helper component for rendering a single overlay layer
+const OverlayLayer = ({ overlayType }: { overlayType: string }) => {
+  const { overlayData } = useOverlayData(overlayType);
+
+  if (!overlayData || !overlayData.features || overlayData.features.length === 0) {
+    return null;
+  }
+
+  const getOverlayStyle = (type: string) => {
+    switch (type) {
+      case 'bikeLanes':
+        return {
+          color: '#0066cc',
+          weight: 3,
+          opacity: 0.8,
+          dashArray: '5, 5',
+        };
+      case 'parkSpace':
+        return {
+          fillColor: '#228B22',
+          color: '#006400',
+          weight: 2,
+          fillOpacity: 0.3,
+          opacity: 0.7,
+        };
+      case 'greenstreets':
+        return {
+          fillColor: '#90EE90',
+          color: '#32CD32',
+          weight: 2,
+          fillOpacity: 0.4,
+          opacity: 0.8,
+        };
+      case 'mtaBusLanes':
+        return {
+          color: '#FF6600',
+          weight: 4,
+          opacity: 0.9,
+          dashArray: '10, 5',
+        };
+      default:
+        return {
+          color: '#666',
+          weight: 2,
+          opacity: 0.5,
+        };
+    }
+  };
+
+  const getPopupContent = (type: string, props: any) => {
+    switch (type) {
+      case 'bikeLanes':
+        return `
+          <div class="p-2 min-w-[200px]">
+            <h3 class="font-semibold text-sm mb-2">Bike Lane</h3>
+            <div class="text-xs space-y-1">
+              ${props.street ? `<div><strong>Street:</strong> ${props.street}</div>` : ''}
+              ${props.facilitycl ? `<div><strong>Facility Class:</strong> ${props.facilitycl}</div>` : ''}
+              ${props.ft_facilit ? `<div><strong>Facility Type:</strong> ${props.ft_facilit}</div>` : ''}
+            </div>
+          </div>
+        `;
+      case 'parkSpace':
+        return `
+          <div class="p-2 min-w-[200px]">
+            <h3 class="font-semibold text-sm mb-2">${props.name311 || props.signname || 'DPR Park'}</h3>
+            <div class="text-xs space-y-1">
+              ${props.typecategory ? `<div><strong>Type:</strong> ${props.typecategory}</div>` : ''}
+              ${props.acres ? `<div><strong>Acres:</strong> ${props.acres}</div>` : ''}
+              ${props.location ? `<div><strong>Location:</strong> ${props.location}</div>` : ''}
+            </div>
+          </div>
+        `;
+      case 'greenstreets':
+        return `
+          <div class="p-2 min-w-[200px]">
+            <h3 class="font-semibold text-sm mb-2">${props.name311 || props.signname || 'Greenstreet'}</h3>
+            <div class="text-xs space-y-1">
+              ${props.location ? `<div><strong>Location:</strong> ${props.location}</div>` : ''}
+              ${props.acres ? `<div><strong>Acres:</strong> ${props.acres}</div>` : ''}
+            </div>
+          </div>
+        `;
+      case 'mtaBusLanes':
+        return `
+          <div class="p-2 min-w-[200px]">
+            <h3 class="font-semibold text-sm mb-2">Bus Lane</h3>
+            <div class="text-xs space-y-1">
+              ${props.street ? `<div><strong>Street:</strong> ${props.street}</div>` : ''}
+              <div class="text-orange-600">MTA Bus Lane Route</div>
+            </div>
+          </div>
+        `;
+      default:
+        return '';
+    }
+  };
+
+  return (
+    <GeoJSON
+      key={`overlay-${overlayType}-${overlayData.features.length}`}
+      data={overlayData as any}
+      style={() => getOverlayStyle(overlayType)}
+      onEachFeature={(feature, layer) => {
+        const props = feature.properties || {};
+        const popupContent = getPopupContent(overlayType, props);
+        if (popupContent) {
+          layer.bindPopup(popupContent);
+        }
+      }}
+    />
+  );
+};
+
+const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTractHighlight, collisions = [], collisionsLoading = false, overlayTypes = [], sidebarOpen = true }: MapViewProps) => {
   const mapRef = useRef<L.Map>(null);
   const { geoJsonData, loading, error } = useCensusData();
-  const { overlayData, loading: overlayLoading } = useOverlayData(overlayType);
   const [hoveredTractData, setHoveredTractData] = useState<any>(null);
   const [loadingTract, setLoadingTract] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(10);
   const layerRef = useRef<Map<string, L.Layer>>(new Map()); // Store layer references by GEOID
+
+  // Resize map when sidebar state changes
+  useEffect(() => {
+    if (mapRef.current) {
+      // Small delay to ensure DOM has updated
+      const timer = setTimeout(() => {
+        mapRef.current?.invalidateSize();
+      }, 300); // Match the sidebar transition duration
+      return () => clearTimeout(timer);
+    }
+  }, [sidebarOpen]);
+
+  // Also handle window resize events
+  useEffect(() => {
+    const handleResize = () => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Filter tracts based on variable sliders - MUST be defined before useMemo
   // Uses AND logic: tract matches if it satisfies ALL filter criteria simultaneously
@@ -555,6 +692,12 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
         zoom={10}
         className="h-full w-full"
         ref={mapRef}
+        maxBounds={[
+          [40.4, -74.3], // Southwest bounds (south, west)
+          [41.0, -73.7]  // Northeast bounds (north, east)
+        ]}
+        maxBoundsViscosity={0.5} // How strictly bounds are enforced (0-1, higher = stricter)
+        worldCopyJump={false} // Prevent wrapping around the world
         whenReady={() => {
           if (mapRef.current) {
             setMapBounds(mapRef.current.getBounds());
@@ -565,6 +708,11 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          keepBuffer={5} // Preload tiles: number of rows/columns outside viewport to keep loaded (default is 2)
+          updateWhenZooming={true} // Update tiles when zooming
+          updateWhenIdle={true} // Update tiles when panning stops
+          maxZoom={19} // Maximum zoom level
+          minZoom={9} // Minimum zoom level
         />
         
         {/* Track map events for viewport-based filtering */}
@@ -601,111 +749,9 @@ const MapView = ({ variables, selectedTracts, onTractSelect, onTractHover, onTra
         />
 
         {/* Render overlay layers */}
-        {overlayData && overlayData.features && overlayData.features.length > 0 && (
-          <GeoJSON
-            key={`overlay-${overlayType}-${overlayData.features.length}`}
-            data={overlayData as any}
-            style={(feature) => {
-              // Style based on overlay type
-              switch (overlayType) {
-                case 'bikeLanes':
-                  return {
-                    color: '#0066cc',
-                    weight: 3,
-                    opacity: 0.8,
-                    dashArray: '5, 5',
-                  };
-                case 'parkSpace':
-                  return {
-                    fillColor: '#228B22',
-                    color: '#006400',
-                    weight: 2,
-                    fillOpacity: 0.3,
-                    opacity: 0.7,
-                  };
-                case 'greenstreets':
-                  return {
-                    fillColor: '#90EE90',
-                    color: '#32CD32',
-                    weight: 2,
-                    fillOpacity: 0.4,
-                    opacity: 0.8,
-                  };
-                case 'mtaBusLanes':
-                  return {
-                    color: '#FF6600',
-                    weight: 4,
-                    opacity: 0.9,
-                    dashArray: '10, 5',
-                  };
-                default:
-                  return {
-                    color: '#666',
-                    weight: 2,
-                    opacity: 0.5,
-                  };
-              }
-            }}
-            onEachFeature={(feature, layer) => {
-              // Add popup with feature information
-              const props = feature.properties || {};
-              let popupContent = '';
-
-              switch (overlayType) {
-                case 'bikeLanes':
-                  popupContent = `
-                    <div class="p-2 min-w-[200px]">
-                      <h3 class="font-semibold text-sm mb-2">Bike Lane</h3>
-                      <div class="text-xs space-y-1">
-                        ${props.street ? `<div><strong>Street:</strong> ${props.street}</div>` : ''}
-                        ${props.facilitycl ? `<div><strong>Facility Class:</strong> ${props.facilitycl}</div>` : ''}
-                        ${props.ft_facilit ? `<div><strong>Facility Type:</strong> ${props.ft_facilit}</div>` : ''}
-                      </div>
-                    </div>
-                  `;
-                  break;
-                case 'parkSpace':
-                  popupContent = `
-                    <div class="p-2 min-w-[200px]">
-                      <h3 class="font-semibold text-sm mb-2">${props.name311 || props.signname || 'DPR Park'}</h3>
-                      <div class="text-xs space-y-1">
-                        ${props.typecategory ? `<div><strong>Type:</strong> ${props.typecategory}</div>` : ''}
-                        ${props.acres ? `<div><strong>Acres:</strong> ${props.acres}</div>` : ''}
-                        ${props.location ? `<div><strong>Location:</strong> ${props.location}</div>` : ''}
-                      </div>
-                    </div>
-                  `;
-                  break;
-                case 'greenstreets':
-                  popupContent = `
-                    <div class="p-2 min-w-[200px]">
-                      <h3 class="font-semibold text-sm mb-2">${props.name311 || props.signname || 'Greenstreet'}</h3>
-                      <div class="text-xs space-y-1">
-                        ${props.location ? `<div><strong>Location:</strong> ${props.location}</div>` : ''}
-                        ${props.acres ? `<div><strong>Acres:</strong> ${props.acres}</div>` : ''}
-                      </div>
-                    </div>
-                  `;
-                  break;
-                case 'mtaBusLanes':
-                  popupContent = `
-                    <div class="p-2 min-w-[200px]">
-                      <h3 class="font-semibold text-sm mb-2">Bus Lane</h3>
-                      <div class="text-xs space-y-1">
-                        ${props.street ? `<div><strong>Street:</strong> ${props.street}</div>` : ''}
-                        <div class="text-orange-600">MTA Bus Lane Route</div>
-                      </div>
-                    </div>
-                  `;
-                  break;
-              }
-
-              if (popupContent) {
-                layer.bindPopup(popupContent);
-              }
-            }}
-          />
-        )}
+        {overlayTypes.map((overlayType) => (
+          <OverlayLayer key={overlayType} overlayType={overlayType} />
+        ))}
       </MapContainer>
       
       {/* Custom Map Controls - Right Side */}

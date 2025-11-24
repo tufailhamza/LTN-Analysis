@@ -25,13 +25,13 @@ const AnalysisVariable = ({
 }: AnalysisVariableProps) => {
   return (
     <div className="space-y-3 p-5 rounded-lg border border-border bg-card hover:border-accent/50 transition-colors">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-card-foreground">{name}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-card-foreground truncate">{name}</h3>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button className="text-muted-foreground hover:text-accent transition-colors">
+                <button className="text-muted-foreground hover:text-accent transition-colors flex-shrink-0">
                   <Info className="h-4 w-4" />
                 </button>
               </TooltipTrigger>
@@ -41,7 +41,7 @@ const AnalysisVariable = ({
             </Tooltip>
           </TooltipProvider>
         </div>
-        <span className="text-sm font-mono text-muted-foreground">
+        <span className="text-sm font-mono text-muted-foreground whitespace-nowrap flex-shrink-0">
           {value[0]} - {value[1]}
         </span>
       </div>

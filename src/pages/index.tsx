@@ -3,12 +3,13 @@ import MapView from '@/components/MapView';
 import SidebarSection from '@/components/SidebarSection';
 import AnalysisVariable from '@/components/AnalysisVariable';
 import ResultsPanel from '@/components/ResultsPanel';
-import { Map, CheckCircle, Activity ,CalendarIcon} from 'lucide-react';
+import { Map, CheckCircle, Activity ,CalendarIcon, PanelLeftClose, PanelLeftOpen} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calender';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useCollisionData } from '@/hooks/useCollisionData';
@@ -27,7 +28,8 @@ const Index = () => {
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
   const [collisionType, setCollisionType] = useState<string>("all");
-  const [overlayType, setOverlayType] = useState<string>("none");
+  const [overlayTypes, setOverlayTypes] = useState<Set<string>>(new Set());
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [variables, setVariables] = useState<Variable[]>([
     {
       id: 'carfree',
@@ -137,12 +139,36 @@ const Index = () => {
     }
   };
 
+  const handleOverlayToggle = (overlayType: string, checked: boolean) => {
+    setOverlayTypes((prev) => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(overlayType);
+      } else {
+        newSet.delete(overlayType);
+      }
+      return newSet;
+    });
+  };
+
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card px-8 py-6">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="h-9 w-9"
+            >
+              {sidebarOpen ? (
+                <PanelLeftClose className="h-5 w-5" />
+              ) : (
+                <PanelLeftOpen className="h-5 w-5" />
+              )}
+            </Button>
             <div className="p-2 rounded-lg bg-accent/10">
               <Map className="h-6 w-6 text-accent" />
             </div>
@@ -160,18 +186,23 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         {/* Sidebar */}
-        <aside className="w-96 border-r border-border bg-card relative z-10 flex flex-col h-full">
-          <div className="p-6 border-b border-border flex-shrink-0">
-            <p className="text-sm text-muted-foreground">
-              Use the filters in the left panel to identify which New York City neighborhoods could benefit the most from low traffic solutions based on key community and mobility indicators.
-            </p>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto min-h-0 pb-8 sidebar-scroll">
+        <aside className={cn(
+          "border-r border-border bg-card relative z-10 flex flex-col h-full transition-all duration-300 ease-in-out",
+          sidebarOpen ? "w-96" : "w-0 overflow-hidden"
+        )}>
+          {sidebarOpen && (
+            <>
+              <div className="p-6 border-b border-border flex-shrink-0">
+                <p className="text-sm text-muted-foreground">
+                  Use the filters in the left panel to identify which New York City neighborhoods could benefit the most from low traffic solutions based on key community and mobility indicators.
+                </p>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto min-h-0 pb-8 sidebar-scroll">
 
-        <SidebarSection title="Analysis Variables" defaultOpen={true}>
+        <SidebarSection title="Analysis Variables" defaultOpen={false}>
           {variables.map((variable) => (
             <AnalysisVariable
               key={variable.id}
@@ -246,43 +277,49 @@ const Index = () => {
               <Label className="text-sm font-medium">Collision Type</Label>
               <RadioGroup value={collisionType} onValueChange={setCollisionType}>
                 <div className="flex items-center justify-between space-x-2">
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="all" id="all" />
-                  <Label htmlFor="all" className="font-normal cursor-pointer">
-                    Show all Collisions
-                  </Label>
-                </div>
-                  {dateFrom && dateTo && collisionCounts && (
-                    <span className="text-xs text-muted-foreground font-medium">
-                      {collisionCounts.all.toLocaleString()} collisions
-                    </span>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="all" id="all" />
+                    <Label htmlFor="all" className="font-normal cursor-pointer">
+                      Show all Collisions
+                    </Label>
+                  </div>
+                  <span className="text-xs text-muted-foreground font-medium min-w-[80px] text-right">
+                    {dateFrom && dateTo && collisionCounts ? (
+                      `${collisionCounts.all.toLocaleString()} collisions`
+                    ) : (
+                      <span className="invisible">0 collisions</span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between space-x-2">
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="injuries" id="injuries" />
-                  <Label htmlFor="injuries" className="font-normal cursor-pointer">
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="injuries" id="injuries" />
+                    <Label htmlFor="injuries" className="font-normal cursor-pointer">
                       Show Only Collisions with Injuries
-                  </Label>
+                    </Label>
                   </div>
-                  {dateFrom && dateTo && collisionCounts && (
-                    <span className="text-xs text-orange-600 font-medium">
-                      {collisionCounts.injuries.toLocaleString()} collisions
-                    </span>
-                  )}
+                  <span className="text-xs text-orange-600 font-medium min-w-[80px] text-right">
+                    {dateFrom && dateTo && collisionCounts ? (
+                      `${collisionCounts.injuries.toLocaleString()} collisions`
+                    ) : (
+                      <span className="invisible">0 collisions</span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between space-x-2">
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="fatalities" id="fatalities" />
-                  <Label htmlFor="fatalities" className="font-normal cursor-pointer">
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="fatalities" id="fatalities" />
+                    <Label htmlFor="fatalities" className="font-normal cursor-pointer">
                       Show Only Collisions with Fatalities
-                  </Label>
+                    </Label>
                   </div>
-                  {dateFrom && dateTo && collisionCounts && (
-                    <span className="text-xs text-red-600 font-medium">
-                      {collisionCounts.fatalities.toLocaleString()} collisions
-                    </span>
-                  )}
+                  <span className="text-xs text-red-600 font-medium min-w-[80px] text-right">
+                    {dateFrom && dateTo && collisionCounts ? (
+                      `${collisionCounts.fatalities.toLocaleString()} collisions`
+                    ) : (
+                      <span className="invisible">0 collisions</span>
+                    )}
+                  </span>
                 </div>
               </RadioGroup>
             </div>
@@ -312,43 +349,65 @@ const Index = () => {
 
         <SidebarSection title="Additional Overlays" defaultOpen={false}>
           <div className="space-y-3 pb-2">
-            <RadioGroup value={overlayType} onValueChange={setOverlayType}>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="none" id="none" />
-                <Label htmlFor="none" className="font-normal cursor-pointer">
-                  None
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="bikeLanes" id="bikeLanes" />
-                <Label htmlFor="bikeLanes" className="font-normal cursor-pointer">
-                  DOT Bike Lanes
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="parkSpace" id="parkSpace" />
-                <Label htmlFor="parkSpace" className="font-normal cursor-pointer">
-                  DPR Parks
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="greenstreets" id="greenstreets" />
-                <Label htmlFor="greenstreets" className="font-normal cursor-pointer">
-                  DPR Greenstreets
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="mtaBusLanes" id="mtaBusLanes" />
-                <Label htmlFor="mtaBusLanes" className="font-normal cursor-pointer">
-                  MTA Bus Lanes
-                </Label>
-              </div>
-            </RadioGroup>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="bikeLanes"
+                checked={overlayTypes.has('bikeLanes')}
+                onCheckedChange={(checked) => handleOverlayToggle('bikeLanes', checked === true)}
+              />
+              <Label htmlFor="bikeLanes" className="font-normal cursor-pointer">
+                DOT Bike Lanes
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="parkSpace"
+                checked={overlayTypes.has('parkSpace')}
+                onCheckedChange={(checked) => handleOverlayToggle('parkSpace', checked === true)}
+              />
+              <Label htmlFor="parkSpace" className="font-normal cursor-pointer">
+                DPR Parks
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="greenstreets"
+                checked={overlayTypes.has('greenstreets')}
+                onCheckedChange={(checked) => handleOverlayToggle('greenstreets', checked === true)}
+              />
+              <Label htmlFor="greenstreets" className="font-normal cursor-pointer">
+                DPR Greenstreets
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="mtaBusLanes"
+                checked={overlayTypes.has('mtaBusLanes')}
+                onCheckedChange={(checked) => handleOverlayToggle('mtaBusLanes', checked === true)}
+              />
+              <Label htmlFor="mtaBusLanes" className="font-normal cursor-pointer">
+                MTA Bus Lanes
+              </Label>
+            </div>
           </div>
         </SidebarSection>
 
-          </div>
-      </aside>
+              </div>
+            </>
+          )}
+        </aside>
+
+        {/* Expand button when sidebar is collapsed */}
+        {!sidebarOpen && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setSidebarOpen(true)}
+            className="absolute left-0 top-4 z-20 h-10 w-10 rounded-r-lg rounded-l-none border-l-0 shadow-lg bg-card hover:bg-accent/10"
+          >
+            <PanelLeftOpen className="h-5 w-5" />
+          </Button>
+        )}
       
 
         {/* Map View */}
@@ -361,7 +420,8 @@ const Index = () => {
             onTractHighlight={handleTractHighlight}
             collisions={collisions}
             collisionsLoading={collisionsLoading}
-            overlayType={overlayType}
+            overlayTypes={Array.from(overlayTypes)}
+            sidebarOpen={sidebarOpen}
           />
         </main>
       </div>
