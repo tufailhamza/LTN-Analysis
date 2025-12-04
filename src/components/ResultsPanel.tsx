@@ -288,11 +288,7 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
                             >
                               {geoid}
                             </button>
-                            {tractData.ntaCodes || tractData.overlappingNTAs ? (
-                              <span className="text-xs text-muted-foreground">
-                                NTA: {tractData.ntaCodes || (Array.isArray(tractData.overlappingNTAs) ? tractData.overlappingNTAs.join(', ') : 'N/A')}
-                              </span>
-                            ) : null}
+                          
                           </div>
                         ) : (
                           <span className="text-muted-foreground">N/A</span>
