@@ -5,7 +5,7 @@ import AnalysisVariable from '@/components/AnalysisVariable';
 import ResultsPanel from '@/components/ResultsPanel';
 import { Map, CheckCircle, Activity ,CalendarIcon, PanelLeftClose, PanelLeftOpen} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calender';
+import { DatePickerWithSelects } from '@/components/ui/date-picker-with-selects';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
@@ -236,7 +236,7 @@ const Index = () => {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
+                    <DatePickerWithSelects
                       mode="single"
                       selected={dateFrom}
                       onSelect={setDateFrom}
@@ -261,7 +261,7 @@ const Index = () => {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
+                    <DatePickerWithSelects
                       mode="single"
                       selected={dateTo}
                       onSelect={setDateTo}

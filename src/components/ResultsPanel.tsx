@@ -268,35 +268,6 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
                   const geoid = tractData.GEOID || tract.GEOID;
                   const name = tractData.NAME || tractData.name || `Tract ${tractData.tract || ''}`;
                   
-                  // Enrich with NTA data from geoJsonData
-                  let enrichedTractData = { ...tractData };
-                  if (geoid && geoJsonData?.features) {
-                    const geoJsonFeature = geoJsonData.features.find((f: any) => {
-                      const fGeoid = f.properties?.GEOID || f.properties?.geoid;
-                      return fGeoid === geoid;
-                    });
-                    if (geoJsonFeature?.properties) {
-                      const props = geoJsonFeature.properties;
-                      // Prioritize geoJsonData NTA fields, fallback to tractData
-                      enrichedTractData = {
-                        ...tractData,
-                        ntaname: props.ntaname || tractData.ntaname,
-                        nta2020: props.nta2020 || props.NTA2020 || tractData.nta2020,
-                        ntaCodes: props.ntaCodes || 
-                                 (props.overlappingNTAs && Array.isArray(props.overlappingNTAs) 
-                                   ? props.overlappingNTAs.join(', ') 
-                                   : props.overlappingNTAs) ||
-                                 props.nta2020 ||
-                                 props.NTA2020 ||
-                                 tractData.ntaCodes,
-                        overlappingNTAs: props.overlappingNTAs || 
-                                        (props.nta2020 ? [props.nta2020] : null) ||
-                                        (props.NTA2020 ? [props.NTA2020] : null) ||
-                                        tractData.overlappingNTAs,
-                      };
-                    }
-                  }
-                  
                   return (
                     <TableRow 
                       key={geoid}
@@ -317,11 +288,7 @@ const ResultsPanel = ({ variables, selectedTracts, onTractRemove, onTractHighlig
                             >
                               {geoid}
                             </button>
-                            {enrichedTractData.ntaname || enrichedTractData.ntaCodes || enrichedTractData.overlappingNTAs || enrichedTractData.nta2020 ? (
-                              <span className="text-xs text-muted-foreground">
-                                NTA: {enrichedTractData.ntaname || enrichedTractData.ntaCodes || (Array.isArray(enrichedTractData.overlappingNTAs) ? enrichedTractData.overlappingNTAs.join(', ') : enrichedTractData.overlappingNTAs) || enrichedTractData.nta2020 || 'N/A'}
-                              </span>
-                            ) : null}
+                          
                           </div>
                         ) : (
                           <span className="text-muted-foreground">N/A</span>
