@@ -65,6 +65,11 @@ export function useOverlayData(overlayType: string) {
               return feature.properties?.status === 'Current';
             };
             break;
+          case 'communityDistricts':
+            url = '/Community_Distrrict.geojson';
+            // No filter needed - show all community districts
+            filterFn = null;
+            break;
           default:
             setOverlayData(null);
             setLoading(false);
@@ -104,6 +109,8 @@ export function useOverlayData(overlayType: string) {
     error,
   };
 }
+
+
 
 
 

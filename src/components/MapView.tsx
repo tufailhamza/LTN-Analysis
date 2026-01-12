@@ -77,6 +77,14 @@ const OverlayLayer = ({ overlayType }: { overlayType: string }) => {
           opacity: 0.9,
           dashArray: '10, 5',
         };
+      case 'communityDistricts':
+        return {
+          fillColor: '#9C27B0',
+          color: '#7B1FA2',
+          weight: 2,
+          fillOpacity: 0.2,
+          opacity: 0.8,
+        };
       default:
         return {
           color: '#666',
@@ -127,6 +135,27 @@ const OverlayLayer = ({ overlayType }: { overlayType: string }) => {
             <div class="text-xs space-y-1">
               ${props.street ? `<div><strong>Street:</strong> ${props.street}</div>` : ''}
               <div class="text-orange-600">MTA Bus Lane Route</div>
+            </div>
+          </div>
+        `;
+      case 'communityDistricts':
+        // Format BoroCD: first digit is borough (1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island)
+        // Last two digits are the community district number
+        const boroCD = props.BoroCD?.toString() || '';
+        const borough = boroCD.length > 0 ? 
+          (boroCD[0] === '1' ? 'Manhattan' : 
+           boroCD[0] === '2' ? 'Bronx' : 
+           boroCD[0] === '3' ? 'Brooklyn' : 
+           boroCD[0] === '4' ? 'Queens' : 
+           boroCD[0] === '5' ? 'Staten Island' : 'Unknown') : 'Unknown';
+        const cdNumber = boroCD.length > 1 ? boroCD.slice(1) : '';
+        return `
+          <div class="p-2 min-w-[200px]">
+            <h3 class="font-semibold text-sm mb-2">Community District ${cdNumber}</h3>
+            <div class="text-xs space-y-1">
+              <div><strong>Borough:</strong> ${borough}</div>
+              <div><strong>BoroCD:</strong> ${boroCD}</div>
+              ${props.Shape__Area ? `<div><strong>Area:</strong> ${(props.Shape__Area / 4046.86).toFixed(2)} acres</div>` : ''}
             </div>
           </div>
         `;

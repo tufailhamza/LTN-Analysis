@@ -389,6 +389,16 @@ const Index = () => {
                 MTA Bus Lanes
               </Label>
             </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="communityDistricts"
+                checked={overlayTypes.has('communityDistricts')}
+                onCheckedChange={(checked) => handleOverlayToggle('communityDistricts', checked === true)}
+              />
+              <Label htmlFor="communityDistricts" className="font-normal cursor-pointer">
+                NYC Community Districts
+              </Label>
+            </div>
           </div>
         </SidebarSection>
 
